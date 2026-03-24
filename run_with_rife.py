@@ -22,11 +22,11 @@ if torch.cuda.is_available():
     torch.backends.cudnn.enabled = True
     torch.backends.cudnn.benchmark = True
 
-rife_exp = 1
-modelDir = "rife/train_log"
+rife_exp = 2
+modelDir = "rife_model_weights/RIFE_trained_v6/train_log"
 
 
-from rife_model.RIFE_HDv3 import Model
+from rife_model.RIFE import Model
 rife_model = Model()
 rife_model.load_model(modelDir, -1)
 print("Loaded ArXiv-RIFE model")
@@ -41,7 +41,7 @@ def interpolate_frames(first_frame, second_frame, exp):
     img1 = second_frame # .squeeze(0)
 
     # print(f"{img0.shape=}")
-    # print(f"{img1.shape=}")
+    print(f"{img1.shape=}")
 
     # if (img0.shape[0] == 0):
     #     return [img1]
@@ -75,8 +75,8 @@ COND_CHANNELS = 128
 MODEL_PATH = 'model_weights/model.pth'
 OLD_FORMAT = True
 
-FPS = 20
-FRAME_TIME = 1.0 / FPS * (2 ** rife_exp + 1)
+FPS = 60
+FRAME_TIME = 1.0 / FPS * (2 ** rife_exp)
 
 TRACKED_KEYS = {
     'a': 'LEFT',
@@ -197,7 +197,7 @@ def run_interface(sampler, context_len, frame_path):
     actions = torch.stack(actions).unsqueeze(0).to(DEVICE)
 
     while True:
-        start = time.time()
+        start = time.perf_counter()
 
         act = encode_action()
         act_tensor = torch.tensor([[act]], device=DEVICE)
@@ -216,27 +216,26 @@ def run_interface(sampler, context_len, frame_path):
         HIGH_RES_WIDTH = 1280
         HIGH_RES_HEIGHT = 720
 
-        elapsed = time.time() - start
-
 
         try:
-
-            step_time = max(0, FRAME_TIME - elapsed) / (len(interp_frames) - 1)
-            
-            print(f"My can simulates game in {(1 / step_time):.2f} FPS")
-
-            for frame in interp_frames[1:]:
+            n = len(interp_frames) - 1
+            for i, frame in enumerate(interp_frames[1:], 1):
                 img = postprocess_frame(frame[0])
                 img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
                 img = cv2.resize(img, (HIGH_RES_WIDTH, HIGH_RES_HEIGHT), interpolation=cv2.INTER_NEAREST)
                 cv2.imshow("DIAMOND World Model", img)
 
-                wait_ms = max(1, int(step_time * 1000))
-                if cv2.waitKey(wait_ms) & 0xFF == 27:
+                delay = start + i * FRAME_TIME / n - time.perf_counter()
+                if cv2.waitKey(max(1, int(max(0, delay) * 1000))) & 0xFF == 27:
                     cv2.destroyAllWindows()
                     return
         except Exception as e:
             print(f"An error occurred: {e}")
+
+        elapsed = time.perf_counter() - start
+
+        print(f"My can simulates game in {( len(interp_frames[1:])/ elapsed):.2f} DisplayFPS; SimFPS={1.0 / elapsed:.2f}; {elapsed=}; {len(interp_frames[1:])=}")
+        
             
 
     cv2.destroyAllWindows()
