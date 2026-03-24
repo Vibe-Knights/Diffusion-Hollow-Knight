@@ -23,15 +23,16 @@ if torch.cuda.is_available():
     torch.backends.cudnn.benchmark = True
 
 rife_exp = 2
-modelDir = "rife_model_weights/RIFE_trained_v6/train_log"
+modelDir = "Practical-RIFE/RIFEv4.25lite_1018/train_log"
 
 
-from rife_model.RIFE import Model
+from rife_model.practical_RIFE_HDv3 import Model
 rife_model = Model()
 rife_model.load_model(modelDir, -1)
-print("Loaded ArXiv-RIFE model")
+print("Loaded practical-RIFE 4.25lite model")
 rife_model.eval()
 rife_model.device()
+
 
 
 
@@ -48,8 +49,8 @@ def interpolate_frames(first_frame, second_frame, exp):
 
 
     n, c, h, w = img0.shape
-    ph = ((h - 1) // 32 + 1) * 32
-    pw = ((w - 1) // 32 + 1) * 32
+    ph = ((h - 1) // 64 + 1) * 64
+    pw = ((w - 1) // 64 + 1) * 64
     padding = (0, pw - w, 0, ph - h)
     img0 = F.pad(img0, padding)
     img1 = F.pad(img1, padding)
@@ -66,7 +67,8 @@ def interpolate_frames(first_frame, second_frame, exp):
 
     # print(f"{len(img_list)=}")
 
-    return img_list
+    # return img_list
+    return [x[..., :h, :w] for x in img_list]
 
 
 
