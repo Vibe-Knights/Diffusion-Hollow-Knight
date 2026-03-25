@@ -1,0 +1,5 @@
+use_interpolation: True
+model_name: "RIFE_trained_v6"
+model_weights_path: "interpolation/model_weights/RIFE_trained_v6"
+exp: 2
+padding_divider: 32

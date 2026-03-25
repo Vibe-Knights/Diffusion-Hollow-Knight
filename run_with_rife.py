@@ -16,6 +16,13 @@ from world_model.training.trainer import count_parameters
 
 from interpolation.interpolator import Interpolator, InterpolatorConfig
 
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+)
+
+
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
@@ -155,11 +162,11 @@ def run_interface(sampler, interpolator, context_len, frame_path, fps, old_forma
                     cv2.destroyAllWindows()
                     return
         except Exception as e:
-            print(f"An error occurred: {e}")
+            logging.error(f"An error occurred: {e}")
 
         elapsed = time.perf_counter() - start
 
-        print(f"My can simulates game in {( len(interp_frames[1:])/ elapsed):.2f} DisplayFPS; SimFPS={1.0 / elapsed:.2f}; {elapsed=}; {len(interp_frames[1:])=}")
+        logging.info(f"My can simulates game in {( len(interp_frames[1:])/ elapsed):.2f} DisplayFPS; SimFPS={1.0 / elapsed:.2f}; {elapsed=}; {len(interp_frames[1:])=}")
         
             
 
@@ -169,7 +176,7 @@ def run_interface(sampler, interpolator, context_len, frame_path, fps, old_forma
 def make_world_model(denoiser_cfg):
     denoiser = Denoiser(denoiser_cfg)
     denoiser.setup_training(sigma_cfg)
-    print(f"Model has - {count_parameters(denoiser):,} params")
+    logging.info(f"Model has - {count_parameters(denoiser):,} params")
     return denoiser
 
 
@@ -201,9 +208,8 @@ def main(cfg: DictConfig):
     sampler = DiffusionSampler(denoiser, sampler_cfg)
 
 
-
     interpolator_cfg = InterpolatorConfig(
-        use_interpolation=False,
+        use_interpolation=True,
         model_name="RIFEv4.25lite_1018",
         model_weights_path="/media/yalok1/Common/root-on-vscode/YSDA_ML-2/hw-4/Diffusion-Hollow-Knight/interpolation/model_weights/RIFEv4.25lite_1018",
         exp=2,

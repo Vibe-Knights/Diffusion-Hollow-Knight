@@ -1,14 +1,12 @@
 import torch
-import numpy as np
-
 from torch.nn import functional as F
 import warnings
 warnings.filterwarnings("ignore")
 
+import logging
+
 
 from dataclasses import dataclass
-from typing import List, Optional
-
 
 @dataclass
 class InterpolatorConfig:
@@ -39,36 +37,44 @@ class Interpolator():
 
         if self.use_interpolation:
 
+            logging.info(f"interpolation is used with {self.exp}")
+
             match self.model_name:
                 case "RIFEv4.25lite_1018":
                     from interpolation.rife_model.RIFE_HDv3_practical import Model
                     self.model = Model()
-        
+
+                case "RIFE_trained_v6":
+                    from interpolation.rife_model.RIFE import Model
+                    self.model = Model()
+
+                case "RIFE_trained_model_v3.6":
+                    from interpolation.rife_model.RIFE_HDv3 import Model
+                    self.model = Model()
+
+
                 case _:
-                    raise NameError("Wrong model name")
+                   logging.error("Wrong model name")
 
             if self.model is not None:
                 try:
                     self.model.load_model(self.model_weights_path, -1)
+                    logging.info(f"Loaded interpolation model {self.model_name}")
+                    self.model.eval()
+                    self.model.device()
+                    
                 except Exception as exception:
-                    raise exception
+                    self.model = None
+                    logging.error(f"Cant load model {exception=}")
 
-                print(f"Loaded interpolation model {self.model_name}")
-                self.model.eval()
-                self.model.device()
+        if not self.use_interpolation or (self.model is None):
+            logging.info(f"interpolation is not used")
 
 
     def interpolate_frames(self, first_frame, second_frame):
 
         img0 = first_frame
-        img1 = second_frame # .squeeze(0)
-
-        # print(f"{img0.shape=}")
-        # print(f"{img1.shape=}")
-
-        # if (img0.shape[0] == 0):
-        #     return [img1]
-
+        img1 = second_frame
 
         n, c, h, w = img0.shape
         ph = ((h - 1) // self.padding_divider + 1) * self.padding_divider
@@ -90,7 +96,4 @@ class Interpolator():
                 tmp.append(img1)
                 img_list = tmp
 
-        # print(f"{len(img_list)=}")
-
-        # return img_list
         return [x[..., :h, :w] for x in img_list]
