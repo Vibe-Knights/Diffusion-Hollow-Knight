@@ -27,10 +27,10 @@ if torch.cuda.is_available():
     torch.backends.cudnn.benchmark = True
 
 rife_exp = 2
-modelDir = "interpolation/rife_model_weights/RIFEv4.25lite_1018/train_log"
+modelDir = "interpolation/model_weights/RIFEv4.25lite_1018"
 
 
-from interpolation.rife_model.practical_RIFE_HDv3 import Model
+from interpolation.rife_model.RIFE_HDv3_practical import Model
 rife_model = Model()
 rife_model.load_model(modelDir, -1)
 print("Loaded practical-RIFE 4.25lite model")
