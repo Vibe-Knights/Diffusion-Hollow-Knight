@@ -1,0 +1,5 @@
+context_len: 4
+cond_channels: 128
+depths: [2, 2, 2, 2]
+channels: [32, 64, 128, 256]
+attn_depths: [False, False, True, True]

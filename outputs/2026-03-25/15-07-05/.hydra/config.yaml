@@ -1,0 +1,53 @@
+model:
+  context_len: 4
+  cond_channels: 128
+  depths:
+  - 2
+  - 2
+  - 2
+  - 2
+  channels:
+  - 32
+  - 64
+  - 128
+  - 256
+  attn_depths:
+  - false
+  - false
+  - true
+  - true
+trainer:
+  actions:
+  - LEFT
+  - RIGHT
+  - UP
+  - DOWN
+  - JUMP
+  - ATTACK
+  - HEAL
+  action_dim: ${len:${trainer.actions}}
+  lr: 0.0001
+  gamma: 0.955
+  batch_size: 8
+  context_len: ${model.context_len}
+  cond_channels: ${model.cond_channels}
+  training_steps:
+  - name: WARMING UP
+    epochs: 1
+    seq_len: 1
+  - name: TRAINING
+    epochs: 24
+    seq_len: 20
+  - name: LONG SEQUENCE TRAINING
+    epochs: 5
+    seq_len: 50
+  continue_train: false
+  lr_stop: 1.0e-05
+paths:
+  model_path: model_weights/model.pth
+  trainer_model_path: model_weights/model_2.pth
+  dataset_path: data_collection
+  save_path: model_weights
+  first_frame_path: data_collection/dataset/frames_low_res/0000000.png
+fps: 20
+old_format: true
