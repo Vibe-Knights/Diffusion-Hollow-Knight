@@ -1,0 +1,5 @@
+use_interpolation: True
+model_name: "RIFEv4.25lite_1018"
+model_weights_path: "interpolation/model_weights/RIFEv4.25lite_1018"
+exp: 2
+padding_divider: 64
