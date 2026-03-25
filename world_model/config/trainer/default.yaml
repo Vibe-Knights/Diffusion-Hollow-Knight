@@ -1,0 +1,25 @@
+actions: ["LEFT","RIGHT","UP","DOWN","JUMP","ATTACK","HEAL"]
+action_dim: ${len:${trainer.actions}}
+
+lr: 1e-4
+gamma: 0.955
+batch_size: 8
+
+context_len: ${model.context_len}
+cond_channels: ${model.cond_channels}
+
+training_steps:
+  - name: "WARMING UP"
+    epochs: 1
+    seq_len: 1
+
+  - name: "TRAINING"
+    epochs: 24
+    seq_len: 20
+
+  - name: "LONG SEQUENCE TRAINING"
+    epochs: 5
+    seq_len: 50
+
+continue_train: false
+lr_stop: 1e-5

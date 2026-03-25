@@ -1,0 +1,7 @@
+defaults:
+  - model: default
+  - trainer: default
+  - paths: default
+
+fps: 20
+old_format: true

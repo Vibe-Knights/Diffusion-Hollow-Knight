@@ -1,2 +1,0 @@
-frame_id,timestamp,LEFT,RIGHT,UP,DOWN,JUMP,ATTACK,HEAL,dataset_id,frame_low_res_path
-0,73494.297765918,0,0,0,0,0,0,0,0,./dataset/frames_low_res/0000000.png
