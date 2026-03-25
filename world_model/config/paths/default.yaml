@@ -1,0 +1,7 @@
+model_path: world_model/model_weights/model.pth
+trainer_model_path: model_weights/model_2.pth
+
+dataset_path: data_collection
+save_path: model_weights
+
+first_frame_path: world_model/data_collection/dataset/frames_low_res/0000000.png
