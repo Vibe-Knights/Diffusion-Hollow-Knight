@@ -3,18 +3,28 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torchvision import models
 
+from src.utils.fast_flow import backward_warp, resize_flow
 
-class CharbonnierLoss(nn.Module):
+
+class BaseLoss(nn.Module):
+    loss_name: str = ""
+
+
+class CharbonnierLoss(BaseLoss):
+    loss_name = "charbonnier"
+
     def __init__(self, eps=1e-6):
         super().__init__()
         self.eps_sq = eps ** 2
 
-    def forward(self, pred, target):
-        diff = pred - target
+    def forward(self, pred, gt, **kwargs):
+        diff = pred - gt
         return torch.sqrt(diff * diff + self.eps_sq).mean()
 
 
-class VGGPerceptualLoss(nn.Module):
+class VGGPerceptualLoss(BaseLoss):
+    loss_name = "perceptual"
+
     def __init__(self, layer_weights=None):
         super().__init__()
         vgg = models.vgg19(weights=models.VGG19_Weights.DEFAULT).features
@@ -31,27 +41,35 @@ class VGGPerceptualLoss(nn.Module):
         self.register_buffer('mean', torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1))
         self.register_buffer('std', torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1))
 
-    def forward(self, pred, target):
+    def forward(self, pred, gt, **kwargs):
         pred = (pred - self.mean) / self.std
-        target = (target - self.mean) / self.std
+        gt = (gt - self.mean) / self.std
         loss = 0.0
         for key in sorted(self.blocks.keys(), key=int):
             pred = self.blocks[key](pred)
-            target = self.blocks[key](target)
-            loss += self.layers[key] * F.l1_loss(pred, target.detach())
+            gt = self.blocks[key](gt)
+            loss += self.layers[key] * F.l1_loss(pred, gt.detach())
         return loss
 
 
-class TemporalConsistencyLoss(nn.Module):
+class TemporalConsistencyLoss(BaseLoss):
+    loss_name = "temporal"
+
     def __init__(self):
         super().__init__()
-        self.charbonnier = CharbonnierLoss()
+        self._charbonnier = CharbonnierLoss()
 
-    def forward(self, hr_current, hr_prev_warped):
-        return self.charbonnier(hr_current, hr_prev_warped)
+    def forward(self, pred, gt, prev_pred=None, flow=None, **kwargs):
+        if prev_pred is None or flow is None:
+            return torch.tensor(0.0, device=pred.device)
+        flow_hr = resize_flow(flow, pred.shape[-2], pred.shape[-1])
+        warped = backward_warp(prev_pred.detach(), flow_hr)
+        return self._charbonnier(pred, warped)
 
 
-class SobelEdgeLoss(nn.Module):
+class SobelEdgeLoss(BaseLoss):
+    loss_name = "edge"
+
     def __init__(self):
         super().__init__()
         self.register_buffer('kernel_x', torch.tensor([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], dtype=torch.float32).view(1, 1, 3, 3))
@@ -63,12 +81,14 @@ class SobelEdgeLoss(nn.Module):
         gy = F.conv2d(gray, self.kernel_y, padding=1)
         return torch.sqrt(gx * gx + gy * gy + 1e-6)
 
-    def forward(self, pred, target):
-        return F.l1_loss(self._edges(pred), self._edges(target))
+    def forward(self, pred, gt, **kwargs):
+        return F.l1_loss(self._edges(pred), self._edges(gt))
 
 
-class FFTLoss(nn.Module):
-    def forward(self, pred, target):
+class FFTLoss(BaseLoss):
+    loss_name = "fft"
+
+    def forward(self, pred, gt, **kwargs):
         fft_pred = torch.fft.rfft2(pred, norm='ortho')
-        fft_target = torch.fft.rfft2(target, norm='ortho')
+        fft_target = torch.fft.rfft2(gt, norm='ortho')
         return F.l1_loss(torch.log(fft_pred.abs() + 1.0), torch.log(fft_target.abs() + 1.0))

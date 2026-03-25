@@ -51,6 +51,7 @@ class FastOpticalFlow:
         return cp.from_dlpack(gray)
 
     def calc(self, frame1: torch.Tensor, frame2: torch.Tensor) -> torch.Tensor:
+        cp = self._cp
         cp_gray1 = self._tensor_to_cupy_uint8(frame1)
         cp_gray2 = self._tensor_to_cupy_uint8(frame2)
 
@@ -61,11 +62,14 @@ class FastOpticalFlow:
         flow_result = flow_gpu[0] if isinstance(flow_gpu, tuple) else flow_gpu
         flow_float = self.nv_of.convertToFloat(flow_result, None)
 
-        flow_float.copyTo(self._gm_out, self.stream)
+        cp_flow = cp.empty((self.height, self.width, 2), dtype=cp.float32)
+        gm_flow = cv2.cuda.GpuMat(self.height, self.width, cv2.CV_32FC2, cp_flow.data.ptr)
+        flow_float.copyTo(gm_flow, self.stream)
         self.stream.waitForCompletion()
 
-        flow_torch = torch.from_dlpack(self._cp_out)
+        flow_torch = torch.from_dlpack(cp_flow)
         return flow_torch.permute(2, 0, 1).unsqueeze(0).contiguous()
+        # return torch.zeros(1, 2, self.height, self.width, device=frame1.device)
 
     def calc_batch(self, frames1: torch.Tensor, frames2: torch.Tensor) -> torch.Tensor:
         return torch.cat([self.calc(frames1[i], frames2[i]) for i in range(frames1.shape[0])], dim=0)
