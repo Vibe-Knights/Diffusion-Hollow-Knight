@@ -14,64 +14,9 @@ from world_model.model.diffusion_sampler import DiffusionSampler, DiffusionSampl
 
 from world_model.training.trainer import count_parameters
 
+from interpolation.interpolator import Interpolator, InterpolatorConfig
+
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-import os
-from torch.nn import functional as F
-import warnings
-warnings.filterwarnings("ignore")
-
-torch.set_grad_enabled(False)
-if torch.cuda.is_available():
-    torch.backends.cudnn.enabled = True
-    torch.backends.cudnn.benchmark = True
-
-rife_exp = 2
-modelDir = "interpolation/model_weights/RIFEv4.25lite_1018"
-
-
-from interpolation.rife_model.RIFE_HDv3_practical import Model
-rife_model = Model()
-rife_model.load_model(modelDir, -1)
-print("Loaded practical-RIFE 4.25lite model")
-rife_model.eval()
-rife_model.device()
-
-
-def interpolate_frames(first_frame, second_frame, exp):
-
-    img0 = first_frame
-    img1 = second_frame # .squeeze(0)
-
-    # print(f"{img0.shape=}")
-    print(f"{img1.shape=}")
-
-    # if (img0.shape[0] == 0):
-    #     return [img1]
-
-
-    n, c, h, w = img0.shape
-    ph = ((h - 1) // 64 + 1) * 64
-    pw = ((w - 1) // 64 + 1) * 64
-    padding = (0, pw - w, 0, ph - h)
-    img0 = F.pad(img0, padding)
-    img1 = F.pad(img1, padding)
-
-    img_list = [img0, img1]
-    for i in range(exp):
-        tmp = []
-        for j in range(len(img_list) - 1):
-            mid = rife_model.inference(img_list[j], img_list[j + 1])
-            tmp.append(img_list[j])
-            tmp.append(mid)
-        tmp.append(img1)
-        img_list = tmp
-
-    # print(f"{len(img_list)=}")
-
-    # return img_list
-    return [x[..., :h, :w] for x in img_list]
-
 
 
 TRACKED_KEYS = {
@@ -158,7 +103,7 @@ def postprocess_frame(frame, old_format):
 
 
 @torch.no_grad()
-def run_interface(sampler, context_len, frame_path, fps, old_format):
+def run_interface(sampler, interpolator, context_len, frame_path, fps, old_format):
     frame_time = 1.0 / fps
     listener = keyboard.Listener(on_press=on_press, on_release=on_release)
     listener.start()
@@ -187,7 +132,7 @@ def run_interface(sampler, context_len, frame_path, fps, old_format):
         prev_frame = frames[:, -1]
         next_frame, _ = sampler.sample(frames, actions)
 
-        interp_frames = interpolate_frames(prev_frame, next_frame, rife_exp)
+        interp_frames = interpolator.interpolate_frames(prev_frame, next_frame)
 
         next_frame = next_frame.unsqueeze(1)
         frames = torch.cat([frames[:,1:], next_frame], dim=1)
@@ -221,8 +166,7 @@ def run_interface(sampler, context_len, frame_path, fps, old_format):
     cv2.destroyAllWindows()
 
 
-
-def make_model(denoiser_cfg):
+def make_world_model(denoiser_cfg):
     denoiser = Denoiser(denoiser_cfg)
     denoiser.setup_training(sigma_cfg)
     print(f"Model has - {count_parameters(denoiser):,} params")
@@ -249,16 +193,29 @@ def main(cfg: DictConfig):
         sigma_offset_noise=0.1
     )
 
-    denoiser = make_model(denoiser_cfg).to(DEVICE)
+    denoiser = make_world_model(denoiser_cfg).to(DEVICE)
     model_path = to_absolute_path(cfg.paths.model_path)
     data = torch.load(model_path)
     denoiser.load_state_dict(data['model'])
     denoiser.eval()
     sampler = DiffusionSampler(denoiser, sampler_cfg)
 
+
+
+    interpolator_cfg = InterpolatorConfig(
+        use_interpolation=False,
+        model_name="RIFEv4.25lite_1018",
+        model_weights_path="/media/yalok1/Common/root-on-vscode/YSDA_ML-2/hw-4/Diffusion-Hollow-Knight/interpolation/model_weights/RIFEv4.25lite_1018",
+        exp=2,
+        padding_divider=64
+    )
+
+    interpolator = Interpolator(interpolator_cfg)
+
     first_frame_path = to_absolute_path(cfg.paths.first_frame_path)
     run_interface(
         sampler,
+        interpolator,
         cfg.model.context_len,
         first_frame_path,
         cfg.fps,
