@@ -71,3 +71,11 @@ upscaler:
 hydra:
   job:
     chdir: false
+
+finetune:
+  checkpoint: model_weights/1.6M/model.pth
+  chains_root: dataset/lr_diffusion
+  run_dir: runs/upscaler_finetune
+  epochs: 50
+  val_split: 0.1
+  teacher_forcing_p: 0.4

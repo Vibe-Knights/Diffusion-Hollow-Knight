@@ -1,4 +1,3 @@
-import cv2
 import torch
 import torch.nn.functional as F
 
@@ -28,7 +27,9 @@ def resize_flow(flow: torch.Tensor, target_h: int, target_w: int) -> torch.Tenso
 
 class FastOpticalFlow:
     def __init__(self, height: int, width: int):
+        import cv2  # lazy — only needed when NVOF is actually initialised
         import cupy as cp
+        self._cv2 = cv2
         self._cp = cp
         self.height = height
         self.width = width
@@ -37,7 +38,7 @@ class FastOpticalFlow:
         self.nv_of = cv2.cuda.NvidiaOpticalFlow_2_0.create((width, height), None)
 
         self._cp_out = cp.empty((height, width, 2), dtype=cp.float32)
-        self._gm_out = cv2.cuda.GpuMat(height, width, cv2.CV_32FC2, self._cp_out.data.ptr)
+        self._gm_out = self._cv2.cuda.GpuMat(height, width, cv2.CV_32FC2, self._cp_out.data.ptr)
 
     def _tensor_to_cupy_uint8(self, t: torch.Tensor):
         cp = self._cp
@@ -55,6 +56,7 @@ class FastOpticalFlow:
         cp_gray1 = self._tensor_to_cupy_uint8(frame1)
         cp_gray2 = self._tensor_to_cupy_uint8(frame2)
 
+        cv2 = self._cv2
         gm1 = cv2.cuda.GpuMat(self.height, self.width, cv2.CV_8UC1, cp_gray1.data.ptr)
         gm2 = cv2.cuda.GpuMat(self.height, self.width, cv2.CV_8UC1, cp_gray2.data.ptr)
 
@@ -63,7 +65,7 @@ class FastOpticalFlow:
         flow_float = self.nv_of.convertToFloat(flow_result, None)
 
         cp_flow = cp.empty((self.height, self.width, 2), dtype=cp.float32)
-        gm_flow = cv2.cuda.GpuMat(self.height, self.width, cv2.CV_32FC2, cp_flow.data.ptr)
+        gm_flow = cv2.cuda.GpuMat(self.height, self.width, cv2.CV_32FC2, cp_flow.data.ptr)  # cv2 aliased above
         flow_float.copyTo(gm_flow, self.stream)
         self.stream.waitForCompletion()
 

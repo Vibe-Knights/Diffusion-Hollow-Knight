@@ -1,0 +1,40 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+
+    network_mode: "host"
+    # ports:
+    #   - "8000:8000"
+    # # Открываем диапазон UDP-портов для WebRTC трафика
+    #   - "50000-50050:50000-50050/udp"
+    volumes:
+      # Mount model weights so they don't need to be baked into the image
+      - ./world_model/model_weights:/app/world_model/model_weights:ro
+      - ./upscaler/model_weights:/app/upscaler/model_weights:ro
+      - ./interpolation/model_weights:/app/interpolation/model_weights:ro
+      # Mount first frame used to seed the diffusion context
+      - ./world_model/data_collection/dataset/frames_low_res:/app/world_model/data_collection/dataset/frames_low_res:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu, compute, video, utility]
+    environment:
+      - PYTHONUNBUFFERED=1
+      - APP_MAX_SESSIONS=2
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "8080:80"
+    # depends_on:
+    #   - backend
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped

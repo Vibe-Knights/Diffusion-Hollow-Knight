@@ -19,8 +19,8 @@ from world_model.model.denoiser import Denoiser, DenoiserConfig, SigmaDistributi
 from world_model.model.diffusion_sampler import DiffusionSampler, DiffusionSamplerConfig
 from world_model.model.inner_model import InnerModelConfig
 from world_model.training.trainer import count_parameters
-from src.upscaler.model import FastUpscaler
-from src.upscaler.upscaler import Upscaler
+from upscaler.src.upscaler.model import FastUpscaler
+from upscaler.src.upscaler.upscaler import Upscaler
 
 log = logging.getLogger(__name__)
 
