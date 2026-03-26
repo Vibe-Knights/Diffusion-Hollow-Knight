@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Dict
 
@@ -114,22 +115,40 @@ async def handle_offer(request: OfferRequest) -> OfferResponse:
             handle_input_message(session, message)
 
     # Cleanup on disconnect — guard against double-cleanup
-    _cleaning = set()
+    _cleaned = False
+
+    async def _cleanup(reason: str = "") -> None:
+        nonlocal _cleaned
+        if _cleaned:
+            return
+        _cleaned = True
+        active_sessions.pop(pc_id, None)
+        try:
+            await pc.close()
+        except Exception:
+            pass
+        log.info("Session %s cleaned up (%s). Active: %d", pc_id, reason, len(active_sessions))
 
     @pc.on("connectionstatechange")
     async def on_connectionstatechange():
         state = pc.connectionState
         log.info("Connection state: %s (session %s)", state, pc_id)
-        if state in ("failed", "closed", "disconnected"):
-            if pc_id in _cleaning:
-                return
-            _cleaning.add(pc_id)
-            active_sessions.pop(pc_id, None)
-            try:
-                await pc.close()
-            except Exception:
-                pass
-            log.info("Session %s cleaned up. Active: %d", pc_id, len(active_sessions))
+        if state in ("failed", "closed"):
+            await _cleanup(state)
+        elif state == "disconnected":
+            # disconnected is temporary — wait before cleaning up
+            await asyncio.sleep(5)
+            if not _cleaned and pc.connectionState != "connected":
+                await _cleanup("disconnected-timeout")
+
+    # Watchdog: if ICE never completes within 30 s, drop the session
+    async def _watchdog() -> None:
+        await asyncio.sleep(30)
+        if not _cleaned and pc.connectionState != "connected":
+            log.warning("Session %s: ICE timeout (state=%s)", pc_id, pc.connectionState)
+            await _cleanup("ice-timeout")
+
+    asyncio.ensure_future(_watchdog())
 
     await pc.setRemoteDescription(offer)
     answer = await pc.createAnswer()
