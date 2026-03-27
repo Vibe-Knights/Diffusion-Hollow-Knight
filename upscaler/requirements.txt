@@ -3,6 +3,7 @@ torch>=2.5.0
 torchvision>=0.20.0
 numpy>=1.26.0
 cupy-cuda12x # replace with your cuda version
+Pillow>=10.0.0
 
 # Training & Config
 hydra-core>=1.3.2
@@ -17,7 +18,7 @@ tqdm>=4.67.0
 # FastOpticalFlow requires custom OpenCV build with flags:
 # -DWITH_CUDA=ON -DWITH_NVCUVID=ON -DWITH_NVIDIA_OPTFLOW=ON
 # Or use a suitable wheel (e.g., opencv-python-cuda).
-opencv-python>=4.8.0
+# opencv-python>=4.8.0
 
 
 # triton-windows>=3.1.0; sys_platform == 'win32' 

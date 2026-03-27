@@ -1,0 +1,52 @@
+services:
+  # ── TURN relay (coturn) — enables WebRTC through Docker NAT ──
+  turn:
+    image: coturn/coturn:latest
+    ports:
+      - "3478:3478/udp"
+      - "3478:3478/tcp"
+      - "49152-49162:49152-49162/udp"
+    command: >
+      turnserver -n --log-file=stdout
+      --listening-port=3478
+      --min-port=49152 --max-port=49162
+      --realm=dhk
+      --user=dhk:dhk123
+      --lt-cred-mech
+      --no-tls --no-dtls
+      --fingerprint
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./world_model/model_weights:/app/world_model/model_weights:ro
+      - ./upscaler/model_weights:/app/upscaler/model_weights:ro
+      - ./interpolation/model_weights:/app/interpolation/model_weights:ro
+      - ./world_model/data_collection/dataset/frames_low_res:/app/world_model/data_collection/dataset/frames_low_res:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu, compute, video, utility]
+    environment:
+      - PYTHONUNBUFFERED=1
+      - APP_MAX_SESSIONS=2
+    depends_on:
+      - turn
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+    restart: unless-stopped

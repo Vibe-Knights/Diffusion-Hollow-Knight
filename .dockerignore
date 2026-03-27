@@ -1,0 +1,38 @@
+# Git
+.git
+.gitignore
+
+# Node
+frontend/node_modules
+frontend/dist
+
+# Python caches
+__pycache__
+*.pyc
+*.pyo
+.mypy_cache
+.pytest_cache
+
+# Model weights (mounted as volumes at runtime)
+world_model/model_weights
+upscaler/model_weights
+interpolation/model_weights
+
+# Datasets
+upscaler/dataset
+world_model/data_collection/dataset
+
+# IDE / OS
+.vscode
+.idea
+*.swp
+*.swo
+Thumbs.db
+.DS_Store
+
+# Outputs / logs
+outputs/
+*.log
+
+# Docker
+docker-compose.yml
