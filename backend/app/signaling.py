@@ -86,7 +86,14 @@ async def handle_offer(request: OfferRequest) -> OfferResponse:
 
     pc = RTCPeerConnection(
         configuration=RTCConfiguration(
-            iceServers=[RTCIceServer(urls="stun:stun.l.google.com:19302")]
+            iceServers=[
+                RTCIceServer(urls="stun:stun.l.google.com:19302"),
+                RTCIceServer(
+                    urls="turn:turn:3478",
+                    username="dhk",
+                    credential="dhk123",
+                ),
+            ]
         )
     )
     pc_id = f"pc_{id(pc)}"

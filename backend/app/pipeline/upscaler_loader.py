@@ -114,19 +114,11 @@ def load_upscaler(cfg: AppSettings) -> Optional[UpscalerWrapper]:
     model.fuse()
     log.info("Upscaler loaded & fused: %s  lr=%s hr=%s", ckpt_path, lr_size, hr_size)
 
-    # Probe NVOF
-    _nvof_available = _check_nvof()
+    # Initialise optical flow — FastOpticalFlow gracefully falls back to zero-flow
+    from src.utils.fast_flow import FastOpticalFlow
+    optical_flow = FastOpticalFlow(*lr_size)
+    _nvof_available = optical_flow.is_active
     log.info("NVOF available: %s", _nvof_available)
-
-    optical_flow = None
-    if _nvof_available:
-        try:
-            from src.utils.fast_flow import FastOpticalFlow
-            optical_flow = FastOpticalFlow(*lr_size)
-            log.info("FastOpticalFlow initialised for %s", lr_size)
-        except Exception as exc:
-            log.warning("FastOpticalFlow init failed (%s) — will use zero flow", exc)
-            _nvof_available = False
 
     wrapper = UpscalerWrapper(model, lr_size, hr_size, optical_flow=optical_flow)
     wrapper.eval()

@@ -25,20 +25,43 @@ def resize_flow(flow: torch.Tensor, target_h: int, target_w: int) -> torch.Tenso
     return flow_resized
 
 
+def _nvof_supported() -> bool:
+    """Return True if cv2 CUDA Optical Flow + cupy are available."""
+    try:
+        import cv2
+        import cupy  # noqa: F401
+        _ = cv2.cuda.NvidiaOpticalFlow_2_0
+        return True
+    except Exception:
+        return False
+
+
+NVOF_AVAILABLE: bool = _nvof_supported()
+
+
 class FastOpticalFlow:
     def __init__(self, height: int, width: int):
-        import cv2  # lazy — only needed when NVOF is actually initialised
-        import cupy as cp
-        self._cv2 = cv2
-        self._cp = cp
         self.height = height
         self.width = width
+        self._has_nvof = False
 
-        self.stream = cv2.cuda_Stream()
-        self.nv_of = cv2.cuda.NvidiaOpticalFlow_2_0.create((width, height), None)
+        if NVOF_AVAILABLE:
+            try:
+                import cv2
+                import cupy as cp
+                self._cv2 = cv2
+                self._cp = cp
+                self.stream = cv2.cuda_Stream()
+                self.nv_of = cv2.cuda.NvidiaOpticalFlow_2_0.create((width, height), None)
+                self._cp_out = cp.empty((height, width, 2), dtype=cp.float32)
+                self._gm_out = cv2.cuda.GpuMat(height, width, cv2.CV_32FC2, self._cp_out.data.ptr)
+                self._has_nvof = True
+            except Exception:
+                self._has_nvof = False
 
-        self._cp_out = cp.empty((height, width, 2), dtype=cp.float32)
-        self._gm_out = self._cv2.cuda.GpuMat(height, width, cv2.CV_32FC2, self._cp_out.data.ptr)
+    @property
+    def is_active(self) -> bool:
+        return self._has_nvof
 
     def _tensor_to_cupy_uint8(self, t: torch.Tensor):
         cp = self._cp
@@ -52,6 +75,9 @@ class FastOpticalFlow:
         return cp.from_dlpack(gray)
 
     def calc(self, frame1: torch.Tensor, frame2: torch.Tensor) -> torch.Tensor:
+        if not self._has_nvof:
+            return torch.zeros(1, 2, self.height, self.width, device=frame1.device)
+
         cp = self._cp
         cp_gray1 = self._tensor_to_cupy_uint8(frame1)
         cp_gray2 = self._tensor_to_cupy_uint8(frame2)
@@ -65,13 +91,12 @@ class FastOpticalFlow:
         flow_float = self.nv_of.convertToFloat(flow_result, None)
 
         cp_flow = cp.empty((self.height, self.width, 2), dtype=cp.float32)
-        gm_flow = cv2.cuda.GpuMat(self.height, self.width, cv2.CV_32FC2, cp_flow.data.ptr)  # cv2 aliased above
+        gm_flow = cv2.cuda.GpuMat(self.height, self.width, cv2.CV_32FC2, cp_flow.data.ptr)
         flow_float.copyTo(gm_flow, self.stream)
         self.stream.waitForCompletion()
 
         flow_torch = torch.from_dlpack(cp_flow)
         return flow_torch.permute(2, 0, 1).unsqueeze(0).contiguous()
-        # return torch.zeros(1, 2, self.height, self.width, device=frame1.device)
 
     def calc_batch(self, frames1: torch.Tensor, frames2: torch.Tensor) -> torch.Tensor:
         return torch.cat([self.calc(frames1[i], frames2[i]) for i in range(frames1.shape[0])], dim=0)

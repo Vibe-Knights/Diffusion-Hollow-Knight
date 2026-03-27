@@ -17,7 +17,7 @@ tqdm>=4.67.0
 # FastOpticalFlow requires custom OpenCV build with flags:
 # -DWITH_CUDA=ON -DWITH_NVCUVID=ON -DWITH_NVIDIA_OPTFLOW=ON
 # Or use a suitable wheel (e.g., opencv-python-cuda).
-opencv-python>=4.8.0
+# opencv-python>=4.8.0
 
 
 # triton-windows>=3.1.0; sys_platform == 'win32' 

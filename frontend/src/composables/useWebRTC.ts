@@ -24,7 +24,10 @@ export function useWebRTC() {
 
     try {
       pc = new RTCPeerConnection({
-        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'turn:localhost:3478', username: 'dhk', credential: 'dhk123' },
+        ],
       })
 
       // Create data channel for input
