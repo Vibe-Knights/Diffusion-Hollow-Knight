@@ -9,12 +9,12 @@ build-base-lite:
 
 # ── App ──────────────────────────────────────────────────────────
 up:
-	docker-compose up --build
+	docker compose up --build
 
 build:
-	docker-compose build
+	docker compose build
 
 down:
-	docker-compose down
+	docker compose down
 
 .PHONY: build-base build-base-lite up build down
