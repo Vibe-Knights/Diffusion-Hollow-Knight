@@ -5,8 +5,11 @@
 # Use this instead of Dockerfile.base when you do NOT need Nvidia Optical Flow.
 FROM nvcr.io/nvidia/pytorch:23.10-py3
 
-# Install standard opencv-python-headless (CPU decode, no GUI deps)
-RUN pip install --no-cache-dir opencv-python
+RUN pip uninstall -y \
+    opencv-python opencv-python-headless \
+    opencv-contrib-python opencv-contrib-python-headless || true
 
 # Pin numpy <2.0 to avoid ABI break with compiled extensions
 RUN pip install --no-cache-dir "numpy>=1.24.0,<2.0"
+
+RUN pip install --no-cache-dir "opencv-python-headless==4.8.0.74"
