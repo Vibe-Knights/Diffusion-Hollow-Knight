@@ -139,7 +139,13 @@ def run_interface(sampler, interpolator, context_len, frame_path, fps, old_forma
         prev_frame = frames[:, -1]
         next_frame, _ = sampler.sample(frames, actions)
 
+
+        inter_time_begin = time.perf_counter()
         interp_frames = interpolator.interpolate_frames(prev_frame, next_frame)
+        inter_time_end = time.perf_counter()
+        inter_time = inter_time_end - inter_time_begin
+
+        
 
         next_frame = next_frame.unsqueeze(1)
         frames = torch.cat([frames[:,1:], next_frame], dim=1)
@@ -166,7 +172,7 @@ def run_interface(sampler, interpolator, context_len, frame_path, fps, old_forma
 
         elapsed = time.perf_counter() - start
 
-        logging.info(f"My can simulates game in {( len(interp_frames[1:])/ elapsed):.2f} DisplayFPS; SimFPS={1.0 / elapsed:.2f}; {elapsed=}; {len(interp_frames[1:])=}")
+        logging.info(f"My can simulates game in {( len(interp_frames[1:])/ elapsed):.2f} DisplayFPS; SimFPS={1.0 / elapsed:.2f}; {elapsed=}; {len(interp_frames[1:])=}; {inter_time=}")
         
             
 
@@ -181,7 +187,7 @@ def make_world_model(denoiser_cfg):
 
 
 
-@hydra.main(config_path="world_model/config", config_name="config")
+@hydra.main(config_path="inference_config", config_name="run_with_rife")
 def main(cfg: DictConfig):
 
     inner_cfg = InnerModelConfig(
@@ -209,11 +215,11 @@ def main(cfg: DictConfig):
 
 
     interpolator_cfg = InterpolatorConfig(
-        use_interpolation=True,
-        model_name="RIFEv4.25lite_1018",
-        model_weights_path="/media/yalok1/Common/root-on-vscode/YSDA_ML-2/hw-4/Diffusion-Hollow-Knight/interpolation/model_weights/RIFEv4.25lite_1018",
-        exp=2,
-        padding_divider=64
+        use_interpolation=cfg.interpolation.use_interpolation,
+        model_name=cfg.interpolation.model_name,
+        model_weights_path=cfg.interpolation.model_weights_path,
+        exp=cfg.interpolation.exp,
+        padding_divider=cfg.interpolation.padding_divider
     )
 
     interpolator = Interpolator(interpolator_cfg)

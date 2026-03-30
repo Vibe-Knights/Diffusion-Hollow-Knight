@@ -1,0 +1,30 @@
+
+fps: 20
+old_format: true
+
+model:
+  context_len: 4
+  cond_channels: 128
+  depths: [2, 2, 2, 2]
+  channels: [32, 64, 128, 256]
+  attn_depths: [False, False, True, True]
+
+
+trainer:
+  actions: ["LEFT","RIGHT","UP","DOWN","JUMP","ATTACK","HEAL"]
+
+paths:
+  model_path: world_model/model_weights/best_model.pth
+  first_frame_path: world_model/data_collection/dataset/frames_low_res/0000000.png
+
+interpolation:
+  use_interpolation: True
+  model_name: "RIFEv4.25lite_1018"
+  model_weights_path: "interpolation/model_weights/RIFEv4.25lite_1018"
+  exp: 2
+  padding_divider: 64
+
+
+hydra:
+  job:
+    chdir: false
