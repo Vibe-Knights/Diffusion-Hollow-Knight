@@ -1,0 +1,47 @@
+# --- Display & Timing ---
+fps: 20  # Set to "unlimited" for no frame rate cap
+unlimited_fps: false
+display_width: 1708
+display_height: 960
+
+# --- World Model ---
+world_model:
+  model_path: world_model/model_weights/model.pth
+  first_frame_path: world_model/data_collection/dataset/frames_low_res/0000000.png
+  old_format: true
+  context_len: 4
+  cond_channels: 128
+  depths: [2, 2, 2, 2]
+  channels: [32, 64, 128, 256]
+  attn_depths: [False, False, True, True]
+  num_steps_denoising: 3
+  sigma_min: 0.002
+  sigma_max: 5.0
+  rho: 7
+  order: 1
+
+# --- Actions ---
+actions: ["LEFT", "RIGHT", "UP", "DOWN", "JUMP", "ATTACK", "HEAL"]
+
+# --- Upscaler ---
+upscaler:
+  enabled: true
+  checkpoint: upscaler/model_weights/1.6M/model.pth
+  num_feat: 64
+  num_blocks: 10
+  expansion: 2
+  lr_size: [72, 128]    # [H, W]
+  hr_size: [288, 512]   # [H, W]
+
+# --- Interpolator ---
+interpolator:
+  enabled: false
+  model_name: "RIFEv4.25lite_1018"
+  weights_path: "interpolation/model_weights/RIFEv4.25lite_1018"
+  exp: 2
+  padding_divider: 64
+
+# --- Hydra ---
+hydra:
+  job:
+    chdir: false
