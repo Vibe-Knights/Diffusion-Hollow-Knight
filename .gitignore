@@ -210,3 +210,6 @@ __marimo__/
 upscaler/dataset/
 node_modules/
 frontend/dist/
+
+# Devin worktrees
+/.worktrees/
