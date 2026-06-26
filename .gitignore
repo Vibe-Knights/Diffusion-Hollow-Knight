@@ -212,4 +212,4 @@ node_modules/
 frontend/dist/
 
 # Devin worktrees
-/.worktrees/
+/.worktrees//.worktrees/
