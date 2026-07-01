@@ -10,6 +10,8 @@ import torch
 import torch.nn.functional as F
 
 from app.config import AppSettings, PROJECT_ROOT
+from app.metrics import MetricsCollector, PipelineMetrics
+from app.pipeline.stages import DiffusionStage, InterpolationStage, UpscalingStage
 
 log = logging.getLogger(__name__)
 
@@ -32,6 +34,10 @@ class GameSession:
         self.interpolator = interpolator
         self.cfg = cfg
 
+        self.diffusion_stage = DiffusionStage(sampler)
+        self.interpolation_stage = InterpolationStage(interpolator)
+        self.upscaling_stage = UpscalingStage(upscaler)
+
         self.pressed_keys: set[str] = set()
         self.upscaler_enabled: bool = cfg.upscaler.enabled and upscaler is not None
         self.interpolation_enabled: bool = False  # off by default; user toggles via UI
@@ -53,6 +59,12 @@ class GameSession:
         # Loading / warmup state
         self.ready: bool = False
         self._step_count: int = 0
+        self.metrics_collector = MetricsCollector()
+        self._upscaler_backend_name = getattr(
+            getattr(upscaler, "optical_flow", None),
+            "backend_name",
+            "unknown",
+        )
 
         self._init_state()
 
@@ -116,81 +128,70 @@ class GameSession:
 
     @torch.no_grad()
     def step(self) -> List[np.ndarray]:
-        # If we have buffered interpolated frames, return next one
         if self._frame_buffer:
             return [self._frame_buffer.pop(0)]
 
         t0 = time.perf_counter()
 
-        # 1. Encode current input
         act_t = torch.tensor([[self.encode_action()]], device=DEVICE)
         self.actions = torch.cat([self.actions[:, 1:], act_t], dim=1)
 
-        # 2. Diffusion inference → LR frame  (B,C,H,W)  range depends on old_format
-        lr_frame, _ = self.sampler.sample(self.frames, self.actions)
+        lr_frame, _ = self.diffusion_stage(self.frames, self.actions)
         self.frames = torch.cat([self.frames[:, 1:], lr_frame.unsqueeze(1)], dim=1)
 
         t_diff = time.perf_counter()
 
-        # Normalise LR to [0,1] once — used by both interpolator and upscaler
-        lr_01 = self._to_upscaler_input(lr_frame)  # (1,3,72,128) [0,1]
+        lr_01 = self._to_upscaler_input(lr_frame)
 
-        # 3. Interpolation on LR frames (small & RIFE-friendly: 72×128)
-        if (
-            self.interpolation_enabled
-            and self.interpolator is not None
-            and self._prev_lr_01 is not None
-        ):
-            # Temporarily set exp on the shared interpolator for this call
-            saved_exp = self.interpolator.exp
-            self.interpolator.exp = self.interpolation_exp
-            interp_lr = self.interpolator.interpolate_frames(
-                self._prev_lr_01, lr_01
-            )
-            self.interpolator.exp = saved_exp
-            # Drop the first element (previous frame, already displayed)
-            lr_sequence = interp_lr[1:]
-        else:
-            lr_sequence = [lr_01]
-
+        lr_sequence = self.interpolation_stage(
+            self._prev_lr_01,
+            lr_01,
+            enabled=self.interpolation_enabled,
+            exp=self.interpolation_exp,
+        )
         self._prev_lr_01 = lr_01
 
         t_interp = time.perf_counter()
 
-        # 4. Sync optical flow flag to upscaler wrapper (if it supports it)
         if self.upscaler is not None and hasattr(self.upscaler, "use_optical_flow"):
             self.upscaler.use_optical_flow = self.use_optical_flow
 
-        # 5. Upscale each LR frame (or just postprocess)
         result_frames: list[np.ndarray] = []
         for lr_t in lr_sequence:
-            if self.upscaler_enabled and self.upscaler is not None:
-                hr = self.upscaler(lr_t, self.prev_hr)
-                self.prev_hr = hr
-                rgb = self._postprocess(hr[0], force_01=True)
-            else:
+            try:
+                if self.upscaler_enabled and self.upscaler is not None:
+                    hr = self.upscaling_stage(lr_t, self.prev_hr)
+                    self.prev_hr = hr
+                    rgb = self._postprocess(hr[0], force_01=True)
+                else:
+                    rgb = self._postprocess(lr_t[0], force_01=True)
+            except Exception as exc:
+                log.exception("Upscaling failed at step %d, falling back to LR", self._step_count)
                 rgb = self._postprocess(lr_t[0], force_01=True)
             result_frames.append(rgb)
 
         t_end = time.perf_counter()
 
+        # --- metrics (from Subsystem B) ---
         self._step_count += 1
-        if self._step_count <= 3 or self._step_count % 100 == 0:
-            log.info(
-                "step #%d  diff=%.0fms  interp=%.0fms  upscale+post=%.0fms  total=%.0fms  frames=%d",
-                self._step_count,
-                (t_diff - t0) * 1000,
-                (t_interp - t_diff) * 1000,
-                (t_end - t_interp) * 1000,
-                (t_end - t0) * 1000,
-                len(result_frames),
-            )
+        from app.metrics import PipelineMetrics
+        metrics = PipelineMetrics(
+            step_index=self._step_count,
+            diffusion_ms=(t_diff - t0) * 1000,
+            interpolation_ms=(t_interp - t_diff) * 1000,
+            upscaling_ms=(t_end - t_interp) * 1000,
+            postprocess_ms=0.0,
+            total_ms=(t_end - t0) * 1000,
+            frames_generated=len(result_frames),
+            upscaler_backend=self._upscaler_backend_name,
+        )
+        metrics.log_summary(threshold_ms=60.0)
+        self.metrics_collector.push(metrics)
 
         if not self.ready:
             self.ready = True
             log.info("Session ready — first frame generated")
 
-        # Buffer all except the first for subsequent recv() calls
         if len(result_frames) > 1:
             self._frame_buffer = result_frames[1:]
             return [result_frames[0]]

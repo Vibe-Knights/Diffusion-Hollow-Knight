@@ -31,7 +31,20 @@ def _to_tensor(image):
 
 
 class UpscalerSequenceDataset(Dataset):
-    def __init__(self, source_dir, base_size, scale, sequence_length=5, augment=True, augment_artifacts=False, interpolation_mode='bicubic', starts=None, random_sampling=False, samples_per_epoch=None):
+    def __init__(
+        self,
+        source_dir,
+        base_size,
+        scale,
+        sequence_length=5,
+        augment=True,
+        augment_artifacts=False,
+        interpolation_mode='bicubic',
+        starts=None,
+        random_sampling=False,
+        samples_per_epoch=None,
+        flow_dir: str | None = None,
+    ):
         self.source_dir = Path(source_dir)
         self.base_h, self.base_w = base_size
         self.scale = int(scale)
@@ -48,6 +61,9 @@ class UpscalerSequenceDataset(Dataset):
             raise ValueError(f'Not enough frames in {source_dir}')
         available_starts = list(range(0, len(self.files) - sequence_length + 1))
         self.starts = starts if starts is not None else available_starts
+        self.flow_dir = Path(flow_dir) if flow_dir else None
+        if self.flow_dir is not None and not self.flow_dir.exists():
+            raise FileNotFoundError(f"flow_dir does not exist: {self.flow_dir}")
 
     def __len__(self):
         return self.samples_per_epoch or len(self.starts)
@@ -86,6 +102,14 @@ class UpscalerSequenceDataset(Dataset):
             lr = cv2.GaussianBlur(lr, (ksize, ksize), sigma)
         return lr
 
+    def _load_flow(self, frame_stem: str):
+        if self.flow_dir is None:
+            return None
+        path = self.flow_dir / f"{frame_stem}_flow.pt"
+        if not path.exists():
+            return None
+        return torch.load(path, weights_only=True)
+
     def __getitem__(self, index):
         start = random.choice(self.starts) if self.random_sampling else self.starts[index]
         frames = self.get_frame_chain(start)
@@ -98,4 +122,16 @@ class UpscalerSequenceDataset(Dataset):
             lr = self._apply_artifacts(lr)
             lr_frames.append(_to_tensor(lr))
             target_frames.append(_to_tensor(target))
-        return torch.stack(lr_frames), torch.stack(target_frames)
+
+        flow_frames = []
+        for offset in range(self.sequence_length):
+            stem = self.files[start + offset].stem
+            flow = self._load_flow(stem)
+            if flow is None and offset > 0:
+                prev_stem = self.files[start + offset - 1].stem
+                flow = self._load_flow(prev_stem)
+            if flow is None:
+                flow = torch.zeros(1, 2, self.base_h, self.base_w)
+            flow_frames.append(flow)
+
+        return torch.stack(lr_frames), torch.stack(target_frames), torch.stack(flow_frames)

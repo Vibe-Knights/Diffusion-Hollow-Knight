@@ -32,6 +32,8 @@ upscaler:
   expansion: 2
   lr_size: [72, 128]    # [H, W]
   hr_size: [288, 512]   # [H, W]
+  flow_backend: "auto"
+  nvof_preset: "slow"
 
 # --- Interpolator ---
 interpolator:

@@ -13,12 +13,11 @@ omegaconf>=2.3.0
 matplotlib>=3.10.0
 tqdm>=4.67.0
 
-# OpenCV with CUDA and Nvidia Optical Flow support
-# NOTE: Standard opencv-python does not include NVIDIA Optical Flow support.
-# FastOpticalFlow requires custom OpenCV build with flags:
-# -DWITH_CUDA=ON -DWITH_NVCUVID=ON -DWITH_NVIDIA_OPTFLOW=ON
-# Or use a suitable wheel (e.g., opencv-python-cuda).
-# opencv-python>=4.8.0
+# OpenCV — standard pip wheel works for ZeroFlow and OpenCVFlow (Farneback).
+# For NVOF (NvofFlow) a custom build with -DWITH_NVIDIA_OPTFLOW=ON is required.
+# For OpenCV CUDA Farneback, a wheel with CUDA modules is required
+# (e.g. opencv-python-cuda or a custom build with -DWITH_CUDA=ON).
+opencv-python>=4.8.0
 
 
 # triton-windows>=3.1.0; sys_platform == 'win32' 

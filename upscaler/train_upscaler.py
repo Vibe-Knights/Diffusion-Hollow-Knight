@@ -21,7 +21,7 @@ from src.losses.manager import WeightedLossManager
 from src.upscaler.dataset import UpscalerSequenceDataset
 from src.upscaler.model import FastUpscaler
 from src.upscaler.trainer import UpscalerTrainer
-from src.utils.fast_flow import FastOpticalFlow
+from src.utils.flow_factory import FlowEstimatorFactory
 
 log = logging.getLogger(__name__)
 
@@ -105,11 +105,13 @@ def main(cfg):
         loss_schedule=loss_schedule,
     )
 
-    flow_estimator = None
-    if cfg.upscaler.train.get('use_nvof', True):
-        lr_h, lr_w = int(cfg.data.lr_size[0]), int(cfg.data.lr_size[1])
-        flow_estimator = FastOpticalFlow(height=lr_h, width=lr_w)
-        log.info('NVOF %dx%d', lr_h, lr_w)
+    lr_h, lr_w = int(cfg.data.lr_size[0]), int(cfg.data.lr_size[1])
+    flow_backend = cfg.upscaler.train.get('flow_backend', 'auto')
+    nvof_preset = cfg.upscaler.train.get('nvof_preset', 'slow')
+    flow_estimator = FlowEstimatorFactory.create(
+        height=lr_h, width=lr_w, backend=flow_backend, nvof_preset=nvof_preset,
+    )
+    log.info('Flow backend for training: %s', flow_estimator.backend_name)
 
     period = cfg.upscaler.train.callback_period
     run_dir = cfg.paths.upscaler_run_dir

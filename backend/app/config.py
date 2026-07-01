@@ -43,6 +43,8 @@ class UpscalerSettings(BaseSettings):
     lr_size: List[int] = [72, 128]
     hr_size: List[int] = [288, 512]
     use_optical_flow: bool = False  # use real NVOF; False → zero-flow (model was trained with zeros)
+    flow_backend: str = "zero"   # auto | nvof | opencv | zero
+    nvof_preset: str = "fast"
 
 
 class InterpolationSettings(BaseSettings):

@@ -179,11 +179,15 @@ def make_upscaler(cfg: DictConfig) -> Upscaler | None:
              f"Input: {lr_size} → Output: {hr_size} | "
              f"Architecture: feat={up_cfg.num_feat}, blocks={up_cfg.num_blocks}")
 
-    try:
-        return Upscaler(model, lr_size=lr_size, hr_size=hr_size)
-    except Exception as exc:
-        log.warning(f"NVOF init failed ({exc}) — upscaler without optical flow")
-        return None
+    upscaler = Upscaler(
+        model, 
+        lr_size=lr_size, 
+        hr_size=hr_size,
+        flow_backend=up_cfg.get("flow_backend", "auto"),
+        nvof_preset=up_cfg.get("nvof_preset", "slow")
+    )
+    log.info("[Upscaler] Flow backend: %s", upscaler.optical_flow.backend_name)
+    return upscaler
 
 
 def make_interpolator(cfg: DictConfig) -> Interpolator | None:

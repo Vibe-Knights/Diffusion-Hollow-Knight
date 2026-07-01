@@ -20,25 +20,17 @@ if _upscaler_root not in sys.path:
 
 from src.upscaler.model import FastUpscaler
 
-# ---------- NVOF availability detection ----------
-_nvof_available: bool = False
+# ---------- Flow backend availability ----------
+_flow_backend_name: str = "none"
 
 
-def _check_nvof() -> bool:
-    """Try to initialise NvidiaOpticalFlow_2_0 once to see if the driver supports it."""
-    try:
-        import cv2
-        import cupy  # noqa: F401
-        nv = cv2.cuda.NvidiaOpticalFlow_2_0.create((128, 72), None)
-        del nv
-        return True
-    except Exception as exc:
-        log.warning("NVOF probe failed: %s", exc)
-        return False
+def get_flow_backend() -> str:
+    return _flow_backend_name
 
 
 def is_nvof_available() -> bool:
-    return _nvof_available
+    """Backward-compat: returns True if any real GPU flow backend is active."""
+    return _flow_backend_name != "none" and _flow_backend_name != "ZeroFlow"
 
 
 # ---------- Unified upscaler wrapper ----------
@@ -114,11 +106,17 @@ def load_upscaler(cfg: AppSettings) -> Optional[UpscalerWrapper]:
     model.fuse()
     log.info("Upscaler loaded & fused: %s  lr=%s hr=%s", ckpt_path, lr_size, hr_size)
 
-    # Initialise optical flow — FastOpticalFlow gracefully falls back to zero-flow
-    from src.utils.fast_flow import FastOpticalFlow
-    optical_flow = FastOpticalFlow(*lr_size)
-    _nvof_available = optical_flow.is_active
-    log.info("NVOF available: %s", _nvof_available)
+    from src.utils.flow_factory import FlowEstimatorFactory
+    optical_flow = FlowEstimatorFactory.create(
+        height=lr_size[0], width=lr_size[1], backend=cfg.upscaler.flow_backend,
+        nvof_preset=cfg.upscaler.nvof_preset,
+    )
+
+    global _flow_backend_name
+    _flow_backend_name = optical_flow.backend_name
+
+    nvof_available = optical_flow.is_active and optical_flow.backend_name != "ZeroFlow"
+    log.info("Flow backend: %s (active=%s)", optical_flow.backend_name, nvof_available)
 
     wrapper = UpscalerWrapper(model, lr_size, hr_size, optical_flow=optical_flow)
     wrapper.eval()

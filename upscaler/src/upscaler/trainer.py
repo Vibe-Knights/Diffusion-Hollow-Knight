@@ -44,7 +44,13 @@ class UpscalerTrainer:
         loss_sum = 0.0
         teacher_p = self.teacher_forcing.get(self.current_epoch) if self.teacher_forcing else 0.0
 
-        for batch_idx, (lr_seq, target_seq) in enumerate(self.train_loader):
+        for batch_idx, batch in enumerate(self.train_loader):
+            if len(batch) == 3:
+                lr_seq, target_seq, flow_seq = batch
+                flow_seq = flow_seq.to(self.device, non_blocking=True)
+            else:
+                lr_seq, target_seq = batch
+                flow_seq = None
             lr_seq = lr_seq.to(self.device, non_blocking=True)
             target_seq = target_seq.to(self.device, non_blocking=True)
             steps = min(lr_seq.shape[1], self.rollout_length or lr_seq.shape[1])
@@ -57,7 +63,12 @@ class UpscalerTrainer:
                 flow_lr = None
                 prev_context = None
                 if t > 0:
-                    flow_lr = self._compute_flow(lr_seq[:, t - 1], lr_seq[:, t])
+                    if flow_seq is not None:
+                        flow_lr = flow_seq[:, t - 1]
+                        if flow_lr.dim() == 5 and flow_lr.shape[2] == 2:
+                            flow_lr = flow_lr.squeeze(1)
+                    else:
+                        flow_lr = self._compute_flow(lr_seq[:, t - 1], lr_seq[:, t])
                     if prev_pred is not None:
                         if torch.rand(1).item() < teacher_p:
                             prev_context = target_seq[:, t - 1].detach()

@@ -15,6 +15,8 @@ runtime:
   latency_budget_ms: 15.0
 
 upscaler:
+  flow_backend: auto   # auto | nvof | opencv | zero
+  nvof_preset: slow
   model:
     in_channels: 6
     out_channels: 3
@@ -47,7 +49,9 @@ upscaler:
       chain_length: ${upscaler.train.sequence_length}
       gap: 16
       seed: 42
-    use_nvof: true
+    flow_backend: auto   # auto | nvof | opencv | zero
+    nvof_preset: slow
+    # use_nvof: true     # DEPRECATED — replaced by flow_backend
     teacher_forcing:
       start_p: 0
       end_p: 0.4

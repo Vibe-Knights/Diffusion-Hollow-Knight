@@ -51,12 +51,14 @@ class ConfigResponse(BaseModel):
     interpolation_available: bool
     interpolation_models: list[str]
     interpolation_exp: int
-    nvof_available: bool
+    nvof_available: bool          # keep for backward compat
+    flow_backend: str               # NEW
     use_optical_flow: bool
 
 
 @router.get("/config")
 async def get_config() -> ConfigResponse:
+    from app.pipeline.upscaler_loader import get_flow_backend
     return ConfigResponse(
         fps=settings.server.fps,
         max_sessions=settings.server.max_sessions,
@@ -70,6 +72,7 @@ async def get_config() -> ConfigResponse:
         ],
         interpolation_exp=settings.interpolation.exp,
         nvof_available=_nvof_available,
+        flow_backend=get_flow_backend(),
         use_optical_flow=settings.upscaler.use_optical_flow,
     )
 
