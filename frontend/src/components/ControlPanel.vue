@@ -9,6 +9,11 @@ defineProps<{
   upscalerAvailable: boolean
   interpolationAvailable: boolean
   interpolationModels: string[]
+  upscaleModels: string[]
+  flowBackends: string[]
+  flowBackend: string
+  upscaleModel: string
+  interpolationModel: string
 }>()
 
 const emit = defineEmits<{
@@ -16,110 +21,123 @@ const emit = defineEmits<{
   'toggle-interpolation': [val: boolean]
   'change-exp': [val: number]
   'toggle-optical-flow': [val: boolean]
+  'change-flow-backend': [val: string]
+  'change-upscale-model': [val: string]
+  'change-interpolation-model': [val: string]
   'connect': []
   'disconnect': []
 }>()
 </script>
 
 <template>
-  <header class="flex items-center justify-between px-6 py-3 bg-hollow-panel border-b border-hollow-border shrink-0">
-    <!-- Title -->
-    <div class="flex items-center gap-3">
-      <h1 class="text-lg font-bold tracking-wide text-hollow-accent">
-        ⚔ Diffusion Hollow Knight
-      </h1>
-    </div>
-
-    <!-- Controls -->
-    <div class="flex items-center gap-6">
-      <!-- Upscaler toggle -->
-      <label
-        class="flex items-center gap-2 cursor-pointer select-none"
-        :class="{ 'opacity-40 pointer-events-none': !upscalerAvailable }"
-      >
-        <span class="text-sm text-hollow-muted">Upscaler</span>
-        <button
-          class="relative w-10 h-5 rounded-full transition-colors duration-200"
-          :class="upscalerOn ? 'bg-hollow-accent' : 'bg-hollow-border'"
-          @click="emit('toggle-upscaler', !upscalerOn)"
+  <div>
+    <header class="bg-surface-container-lowest/90 backdrop-blur-xl border-b border-outline-variant/20 shadow-[0_0_15px_rgba(0,0,0,0.5)] flex justify-between items-center h-16 px-gutter w-full z-50 fixed top-0 left-0">
+      <div class="flex items-center gap-4">
+        <img alt="Vibe Knights Authentic Logo" class="w-8 h-8 object-contain rounded-full" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCeEcwdRrxZ6uTPiUbJcy3p0zqEQGwjTynASLX2-xlzSCdBm7Fnz3fYqbJkFVo5bU3j5lDBjapwKvZ-Y-RBvRYsSGBkGlsR3TfM4Yl9Kg2mBDSKlS0G9iWsdXR5WPxvbzst3M7t78mIzqsEQGa_ikuadjpPzUFkCtKESfAqn3WFFtLuIJqV-RgHyMdhPnzETmOXrjOdblivSjttzqGnPRxQ6knPyYD_E_LFVlg5IP-fbWgxhygiKMz_-mGbX-lVopZaZLI4oJK7eL2q">
+        <span class="font-headline-md text-headline-md text-on-surface tracking-tighter glow-text">VIBE KNIGHTS</span>
+        <div class="h-4 w-[1px] bg-outline-variant mx-2"></div>
+        <div class="flex items-center gap-2">
+          <div class="soul-orb"></div>
+          <span class="font-label-caps text-label-caps text-on-surface">Connection: {{ connected ? 'STABLE' : 'OFFLINE' }}</span>
+        </div>
+      </div>
+      <div class="flex items-center gap-6">
+        <button 
+          @click="connected ? emit('disconnect') : emit('connect')"
+          class="bg-surface-bright text-on-surface border border-outline-variant/30 font-label-caps text-label-caps px-6 py-2 rounded hover:bg-surface-variant transition-colors duration-300 active:scale-95 transition-transform flex items-center gap-2"
         >
-          <span
-            class="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform duration-200"
-            :class="{ 'translate-x-5': upscalerOn }"
-          />
+          <span class="material-symbols-outlined text-[16px]">{{ connected ? 'stop_circle' : 'play_circle' }}</span>
+          {{ connected ? 'STOP STREAM' : 'START STREAM' }}
         </button>
-      </label>
-
-      <!-- Optical Flow toggle -->
-      <label
-        class="flex items-center gap-2 cursor-pointer select-none"
-        :class="{ 'opacity-40 pointer-events-none': !nvofAvailable || !upscalerAvailable || !upscalerOn }"
-      >
-        <span class="text-sm text-hollow-muted">NVOF</span>
-        <button
-          class="relative w-10 h-5 rounded-full transition-colors duration-200"
-          :class="opticalFlowOn ? 'bg-hollow-accent' : 'bg-hollow-border'"
-          @click="emit('toggle-optical-flow', !opticalFlowOn)"
-        >
-          <span
-            class="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform duration-200"
-            :class="{ 'translate-x-5': opticalFlowOn }"
-          />
-        </button>
-      </label>
-
-      <!-- Interpolation toggle -->
-      <label
-        class="flex items-center gap-2 cursor-pointer select-none"
-        :class="{ 'opacity-40 pointer-events-none': !interpolationAvailable }"
-      >
-        <span class="text-sm text-hollow-muted">Interpolation</span>
-        <button
-          class="relative w-10 h-5 rounded-full transition-colors duration-200"
-          :class="interpolationOn ? 'bg-hollow-accent' : 'bg-hollow-border'"
-          @click="emit('toggle-interpolation', !interpolationOn)"
-        >
-          <span
-            class="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform duration-200"
-            :class="{ 'translate-x-5': interpolationOn }"
-          />
-        </button>
-      </label>
-
-      <!-- Interpolation exp -->
-      <div
-        class="flex items-center gap-2"
-        :class="{ 'opacity-40 pointer-events-none': !interpolationAvailable || !interpolationOn }"
-      >
-        <span class="text-sm text-hollow-muted">Exp</span>
-        <div class="flex rounded overflow-hidden border border-hollow-border">
-          <button
-            v-for="v in [1, 2, 3]"
-            :key="v"
-            class="px-2 py-0.5 text-xs font-mono transition-colors"
-            :class="interpolationExp === v ? 'bg-hollow-accent text-hollow-bg' : 'bg-hollow-panel text-hollow-muted hover:bg-hollow-border'"
-            @click="emit('change-exp', v)"
-          >
-            x{{ Math.pow(2, v) }}
+        <div class="flex gap-4">
+          <button class="text-on-surface-variant hover:text-on-surface transition-colors duration-300 active:scale-95 transition-transform">
+            <span class="material-symbols-outlined">signal_cellular_alt</span>
+          </button>
+          <button class="text-on-surface-variant hover:text-on-surface transition-colors duration-300 active:scale-95 transition-transform">
+            <span class="material-symbols-outlined">settings</span>
           </button>
         </div>
       </div>
+    </header>
 
-      <!-- Connect / Disconnect -->
-      <button
-        v-if="!connected"
-        class="px-4 py-1.5 text-sm font-medium rounded bg-hollow-accent text-hollow-bg hover:brightness-110 transition"
-        @click="emit('connect')"
-      >
-        Connect
-      </button>
-      <button
-        v-else
-        class="px-4 py-1.5 text-sm font-medium rounded bg-red-600/80 text-white hover:bg-red-500 transition"
-        @click="emit('disconnect')"
-      >
-        Disconnect
-      </button>
-    </div>
-  </header>
+    <nav class="bg-surface-container-lowest border-r border-outline-variant/10 fixed left-0 top-16 h-[calc(100vh-64px)] w-64 flex flex-col py-md z-40 hidden md:flex">
+      <div class="flex-1 overflow-y-auto px-gutter flex flex-col gap-2">
+        <div class="border-outline-variant/10">
+          <div class="flex flex-col gap-4 px-2">
+            
+            <div class="flex flex-col gap-2">
+              <span class="font-body-md text-body-md text-on-surface">Upscaler</span>
+              <div class="flex bg-surface-container-high rounded p-1 border border-outline-variant/20" :class="{ 'opacity-50 pointer-events-none': !upscalerAvailable }">
+                <button @click="emit('toggle-upscaler', false)" class="flex-1 font-label-caps text-[10px] py-1 text-center rounded transition-colors" :class="!upscalerOn ? 'bg-on-surface/10 text-on-surface border border-on-surface/20' : 'text-on-surface-variant hover:text-on-surface'">OFF</button>
+                <button @click="emit('toggle-upscaler', true)" class="flex-1 font-label-caps text-[10px] py-1 text-center rounded transition-colors" :class="upscalerOn ? 'bg-on-surface/10 text-on-surface border border-on-surface/20' : 'text-on-surface-variant hover:text-on-surface'">ON</button>
+              </div>
+            </div>
+            
+            <div class="flex flex-col gap-2">
+              <span class="font-body-md text-body-md text-on-surface">Model Weights</span>
+              <select 
+                :value="upscaleModel"
+                @change="emit('change-upscale-model', ($event.target as HTMLSelectElement).value)"
+                class="bg-surface-container-high rounded p-1.5 border border-outline-variant/20 font-label-caps text-[10px] text-on-surface-variant focus:border-on-surface/50 focus:outline-none"
+                :disabled="!upscalerAvailable || !upscalerOn"
+                :class="{ 'opacity-50': !upscalerAvailable || !upscalerOn }"
+              >
+                <option v-if="upscaleModels.length === 0">v1.0 Stable</option>
+                <option v-for="model in upscaleModels" :key="model" :value="model">{{ model }}</option>
+              </select>
+            </div>
+            
+            <div class="flex flex-col gap-2">
+              <span class="font-body-md text-body-md text-on-surface">Optical flow</span>
+              <div class="flex bg-surface-container-high rounded p-1 border border-outline-variant/20">
+                <button v-for="backend in (flowBackends.length ? flowBackends : ['NVOF', 'OpenCV', 'IFNet', 'Zero'])" :key="backend"
+                  @click="emit('change-flow-backend', backend); emit('toggle-optical-flow', backend !== 'Zero')"
+                  class="flex-1 font-label-caps text-[10px] py-1 text-center rounded transition-colors"
+                  :class="flowBackend === backend ? 'bg-on-surface/10 text-on-surface border border-on-surface/20' : 'text-on-surface-variant hover:text-on-surface'"
+                >{{ backend }}</button>
+              </div>
+            </div>
+            
+            <div class="flex flex-col gap-2">
+              <span class="font-body-md text-body-md text-on-surface">Interpolation</span>
+              <div class="flex bg-surface-container-high rounded p-1 border border-outline-variant/20" :class="{ 'opacity-50 pointer-events-none': !interpolationAvailable }">
+                <button @click="emit('toggle-interpolation', false)" class="flex-1 font-label-caps text-[10px] py-1 text-center rounded transition-colors" :class="!interpolationOn ? 'bg-on-surface/10 text-on-surface border border-on-surface/20' : 'text-on-surface-variant hover:text-on-surface'">OFF</button>
+                <button v-for="exp in [1, 2, 3]" :key="exp" @click="emit('toggle-interpolation', true); emit('change-exp', exp)" class="flex-1 font-label-caps text-[10px] py-1 text-center rounded transition-colors" :class="interpolationOn && interpolationExp === exp ? 'bg-on-surface/10 text-on-surface border border-on-surface/20' : 'text-on-surface-variant hover:text-on-surface'">x{{ Math.pow(2, exp) }}</button>
+              </div>
+            </div>
+            
+            <div class="flex flex-col gap-2">
+              <span class="font-body-md text-body-md text-on-surface">Model Weights</span>
+              <select 
+                :value="interpolationModel"
+                @change="emit('change-interpolation-model', ($event.target as HTMLSelectElement).value)"
+                class="bg-surface-container-high rounded p-1.5 border border-outline-variant/20 font-label-caps text-[10px] text-on-surface-variant focus:border-on-surface/50 focus:outline-none"
+                :disabled="!interpolationAvailable || !interpolationOn"
+                :class="{ 'opacity-50': !interpolationAvailable || !interpolationOn }"
+              >
+                <option v-if="interpolationModels.length === 0">v1.0 Stable</option>
+                <option v-for="model in interpolationModels" :key="model" :value="model">{{ model }}</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="px-gutter mt-auto pb-4 pt-4 border-t border-outline-variant/10">
+        <button class="w-full mb-4 border border-outline-variant/30 text-error font-label-caps text-label-caps py-2 rounded hover:bg-error/10 hover:border-error/50 transition-colors">
+          PURGE BUFFER
+        </button>
+        <div class="flex justify-between">
+          <a class="flex items-center gap-2 text-on-surface-variant opacity-70 hover:text-on-surface transition-colors" href="#">
+            <span class="material-symbols-outlined text-[18px]">help_outline</span>
+            <span class="font-body-md text-body-md">Support</span>
+          </a>
+          <a class="flex items-center gap-2 text-on-surface-variant opacity-70 hover:text-on-surface transition-colors" href="#">
+            <span class="material-symbols-outlined text-[18px]">terminal</span>
+            <span class="font-body-md text-body-md">Logs</span>
+          </a>
+        </div>
+      </div>
+    </nav>
+  </div>
 </template>
+

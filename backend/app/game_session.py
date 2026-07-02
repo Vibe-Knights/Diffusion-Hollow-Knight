@@ -24,53 +24,83 @@ class GameSession:
     def __init__(
         self,
         sampler,
-        upscaler,
-        interpolator,
-        cfg: AppSettings,
+        upscaler=None,
+        interpolator=None,
+        cfg: AppSettings = None,
         nvof_available: bool = False,
     ):
         self.sampler = sampler
-        self.upscaler = upscaler
-        self.interpolator = interpolator
         self.cfg = cfg
+        self.nvof_available = nvof_available
 
         self.diffusion_stage = DiffusionStage(sampler)
-        self.interpolation_stage = InterpolationStage(interpolator)
-        self.upscaling_stage = UpscalingStage(upscaler)
 
         self.pressed_keys: set[str] = set()
-        self.upscaler_enabled: bool = cfg.upscaler.enabled and upscaler is not None
-        self.interpolation_enabled: bool = False  # off by default; user toggles via UI
+        self.upscaler_enabled: bool = cfg.upscaler.enabled
+        self.interpolation_enabled: bool = False
         self.interpolation_exp: int = cfg.interpolation.exp
         self.use_optical_flow: bool = cfg.upscaler.use_optical_flow and nvof_available
 
         self.old_format: bool = cfg.diffusion.old_format
         self.context_len: int = cfg.diffusion.context_len
 
-        # State tensors
+        from pathlib import Path
+        from app.pipeline.upscaler_loader import create_upscaler_wrapper
+        from app.pipeline.interpolator_loader import get_cached_interpolator
+
+        self.current_upscale_model_name = Path(cfg.upscaler.checkpoint).parent.name
+        self.current_flow_backend = cfg.upscaler.flow_backend
+        self.current_interpolation_model_name = cfg.interpolation.model_name
+
+        self.upscaler = create_upscaler_wrapper(self.current_upscale_model_name, self.current_flow_backend, cfg)
+        self.interpolator = get_cached_interpolator(self.current_interpolation_model_name, cfg)
+
+        self.interpolation_stage = InterpolationStage(self.interpolator)
+        self.upscaling_stage = UpscalingStage(self.upscaler)
+
+        self._upscaler_backend_name = self.current_flow_backend
+
         self.frames: Optional[torch.Tensor] = None
         self.actions: Optional[torch.Tensor] = None
         self.prev_hr: Optional[torch.Tensor] = None
-        self._prev_lr_01: Optional[torch.Tensor] = None  # for interpolation
+        self._prev_lr_01: Optional[torch.Tensor] = None
 
-        # Frame buffer for interpolated frames
         self._frame_buffer: list[np.ndarray] = []
 
-        # Loading / warmup state
         self.ready: bool = False
         self._step_count: int = 0
         self.metrics_collector = MetricsCollector()
-        self._upscaler_backend_name = getattr(
-            getattr(upscaler, "optical_flow", None),
-            "backend_name",
-            "unknown",
-        )
 
         self._init_state()
 
-    # ------------------------------------------------------------------
-    # Initialisation
-    # ------------------------------------------------------------------
+    def set_flow_backend(self, backend: str) -> None:
+        self.current_flow_backend = backend
+        self._reload_upscaler()
+
+    def set_upscale_model(self, model_name: str) -> None:
+        self.current_upscale_model_name = model_name
+        self._reload_upscaler()
+
+    def _reload_upscaler(self) -> None:
+        from app.pipeline.upscaler_loader import create_upscaler_wrapper
+        wrapper = create_upscaler_wrapper(self.current_upscale_model_name, self.current_flow_backend, self.cfg)
+        if wrapper:
+            self.upscaler = wrapper
+            from app.pipeline.stages import UpscalingStage
+            self.upscaling_stage = UpscalingStage(self.upscaler)
+            self._upscaler_backend_name = self.current_flow_backend
+            log.info("Session upscaler reloaded: model=%s flow=%s", self.current_upscale_model_name, self.current_flow_backend)
+
+    def set_interpolation_model(self, model_name: str) -> None:
+        self.current_interpolation_model_name = model_name
+        from app.pipeline.interpolator_loader import get_cached_interpolator
+        interp = get_cached_interpolator(model_name, self.cfg)
+        if interp:
+            self.interpolator = interp
+            from app.pipeline.stages import InterpolationStage
+            self.interpolation_stage = InterpolationStage(self.interpolator)
+            log.info("Session interpolator reloaded: model=%s", model_name)
+
 
     def _init_state(self) -> None:
         frame_path = self.cfg.resolve_path(self.cfg.diffusion.first_frame_path)
@@ -88,10 +118,6 @@ class GameSession:
         self.prev_hr = None
         self._prev_lr_01 = None
 
-    # ------------------------------------------------------------------
-    # Encoding
-    # ------------------------------------------------------------------
-
     def encode_action(self) -> int:
         encoded, mult = 0, 1
         for name in ACTION_ORDER:
@@ -99,10 +125,6 @@ class GameSession:
                 encoded += mult
             mult *= 2
         return encoded
-
-    # ------------------------------------------------------------------
-    # Frame pre/post processing
-    # ------------------------------------------------------------------
 
     def _preprocess(self, frame: np.ndarray) -> torch.Tensor:
         f = frame.astype(np.float32) / 255.0
@@ -121,10 +143,6 @@ class GameSession:
         if self.old_format:
             return frame.clamp(0.0, 1.0)
         return (frame.clamp(-1.0, 1.0) + 1.0) / 2.0
-
-    # ------------------------------------------------------------------
-    # Main step — produces one or more RGB frames
-    # ------------------------------------------------------------------
 
     @torch.no_grad()
     def step(self) -> List[np.ndarray]:
@@ -172,7 +190,6 @@ class GameSession:
 
         t_end = time.perf_counter()
 
-        # --- metrics (from Subsystem B) ---
         self._step_count += 1
         from app.metrics import PipelineMetrics
         metrics = PipelineMetrics(

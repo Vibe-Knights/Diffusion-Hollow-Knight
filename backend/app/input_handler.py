@@ -9,7 +9,6 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-# Browser key → game action name
 KEY_MAP: dict[str, str] = {
     "arrowleft": "LEFT",
     "a": "LEFT",
@@ -36,7 +35,6 @@ def handle_input_message(session: "GameSession", raw: str | bytes) -> None:
     key: str = data.get("key", "").lower()
     state: str = data.get("state", "").lower()
 
-    # Special messages: settings change
     if data.get("type") == "settings":
         _handle_settings(session, data)
         return
@@ -66,3 +64,10 @@ def _handle_settings(session: "GameSession", data: dict) -> None:
     if "use_optical_flow" in data:
         session.use_optical_flow = bool(data["use_optical_flow"])
         log.info("Session optical flow toggled: %s", session.use_optical_flow)
+
+    if "flow_backend" in data:
+        session.set_flow_backend(str(data["flow_backend"]))
+    if "upscale_model" in data:
+        session.set_upscale_model(str(data["upscale_model"]))
+    if "interpolation_model" in data:
+        session.set_interpolation_model(str(data["interpolation_model"]))

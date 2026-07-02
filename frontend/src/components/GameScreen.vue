@@ -26,7 +26,6 @@ watch(() => props.stream, (stream) => {
   }
 })
 
-// Count received frames for FPS display
 let rvfcActive = false
 
 function onVideoFrame() {
@@ -46,7 +45,6 @@ function tryStartFrameCounter() {
     v.requestVideoFrameCallback(onVideoFrame)
     rvfcActive = true
   } catch {
-    // requestVideoFrameCallback not supported
   }
 }
 
@@ -60,7 +58,8 @@ function onVideoPlay() {
   }
 }
 
-// Keyboard handling
+const activeKeys = ref<Record<string, boolean>>({})
+
 const GAME_KEYS = new Set([
   'arrowleft', 'arrowright', 'arrowup', 'arrowdown',
   'a', 'd', 'w', 's',
@@ -71,6 +70,7 @@ function onKeyDown(e: KeyboardEvent) {
   const key = e.key.toLowerCase()
   if (GAME_KEYS.has(key)) {
     e.preventDefault()
+    activeKeys.value[key] = true
     emit('keyaction', { key: e.key, state: 'down' })
   }
 }
@@ -79,6 +79,7 @@ function onKeyUp(e: KeyboardEvent) {
   const key = e.key.toLowerCase()
   if (GAME_KEYS.has(key)) {
     e.preventDefault()
+    activeKeys.value[key] = false
     emit('keyaction', { key: e.key, state: 'up' })
   }
 }
@@ -107,7 +108,6 @@ function onDoubleClick() {
 
 <template>
   <main class="flex-1 flex items-center justify-center bg-hollow-bg relative overflow-hidden">
-    <!-- Video -->
     <video
       ref="videoRef"
       autoplay
@@ -119,7 +119,38 @@ function onDoubleClick() {
       @dblclick="onDoubleClick"
     />
 
-    <!-- Overlay: idle -->
+    <div class="absolute bottom-6 left-6 p-4 rounded-lg flex gap-8 z-20 items-end">
+      <div class="flex flex-col items-center gap-2">
+        <div class="flex justify-center w-full">
+          <div :class="['w-12 h-12 flex flex-col items-center justify-center font-label-caps rounded-xl border border-white/20 transition-all duration-75', activeKeys['w'] ? 'bg-white/20 scale-95 text-white' : 'bg-black/40 text-white/70']">
+            <span class="text-[16px] font-bold">W</span>
+            <span class="text-[9px] opacity-70 mt-0.5">Jump</span>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <div :class="['w-12 h-12 flex flex-col items-center justify-center font-label-caps rounded-xl border border-white/20 transition-all duration-75', activeKeys['a'] ? 'bg-white/20 scale-95 text-white' : 'bg-black/40 text-white/70']">
+            <span class="text-[16px] font-bold">A</span>
+            <span class="text-[9px] opacity-70 mt-0.5">Left</span>
+          </div>
+          <div :class="['w-12 h-12 flex flex-col items-center justify-center font-label-caps rounded-xl border border-white/20 transition-all duration-75', activeKeys['s'] ? 'bg-white/20 scale-95 text-white' : 'bg-black/40 text-white/70']">
+            <span class="text-[16px] font-bold">S</span>
+            <span class="text-[9px] opacity-70 mt-0.5">Down</span>
+          </div>
+          <div :class="['w-12 h-12 flex flex-col items-center justify-center font-label-caps rounded-xl border border-white/20 transition-all duration-75', activeKeys['d'] ? 'bg-white/20 scale-95 text-white' : 'bg-black/40 text-white/70']">
+            <span class="text-[16px] font-bold">D</span>
+            <span class="text-[9px] opacity-70 mt-0.5">Right</span>
+          </div>
+        </div>
+      </div>
+      
+      <div class="flex items-center">
+        <div :class="['w-12 h-12 flex flex-col items-center justify-center font-label-caps rounded-xl border border-white/20 transition-all duration-75', activeKeys['k'] ? 'bg-white/20 scale-95 text-white' : 'bg-black/40 text-white/70']">
+          <span class="text-[16px] font-bold">K</span>
+          <span class="text-[9px] opacity-70 mt-0.5">Attack</span>
+        </div>
+      </div>
+    </div>
+
     <div
       v-if="connectionState === 'idle'"
       class="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-hollow-bg/80"
@@ -128,7 +159,6 @@ function onDoubleClick() {
       <p class="text-hollow-muted">Press <span class="font-mono text-hollow-text">Connect</span> to start</p>
     </div>
 
-    <!-- Overlay: connecting -->
     <div
       v-if="connectionState === 'connecting'"
       class="absolute inset-0 flex items-center justify-center bg-hollow-bg/80"
@@ -142,7 +172,6 @@ function onDoubleClick() {
       </div>
     </div>
 
-    <!-- Overlay: loading game (connected but first frame not yet received) -->
     <div
       v-if="connectionState === 'connected' && gameLoading"
       class="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-hollow-bg/80"
@@ -155,7 +184,6 @@ function onDoubleClick() {
       <p class="text-hollow-muted text-xs">Warming up diffusion model, this may take a minute</p>
     </div>
 
-    <!-- Overlay: error -->
     <div
       v-if="connectionState === 'error'"
       class="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-hollow-bg/80"
@@ -164,7 +192,6 @@ function onDoubleClick() {
       <p class="text-hollow-muted text-sm">{{ error }}</p>
     </div>
 
-    <!-- Overlay: disconnected -->
     <div
       v-if="connectionState === 'disconnected'"
       class="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-hollow-bg/80"

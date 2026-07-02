@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import logging
 import sys
-from typing import Optional
+from pathlib import Path
+from typing import Optional, Tuple
 
 import torch
 import torch.nn as nn
+from omegaconf import OmegaConf
 
 from app.config import AppSettings, PROJECT_ROOT
 
@@ -20,7 +22,6 @@ if _upscaler_root not in sys.path:
 
 from src.upscaler.model import FastUpscaler
 
-# ---------- Flow backend availability ----------
 _flow_backend_name: str = "none"
 
 
@@ -33,7 +34,12 @@ def is_nvof_available() -> bool:
     return _flow_backend_name != "none" and _flow_backend_name != "ZeroFlow"
 
 
-# ---------- Unified upscaler wrapper ----------
+def get_available_upscale_models() -> list[str]:
+    base_dir = PROJECT_ROOT / "upscaler" / "model_weights"
+    if not base_dir.exists():
+        return []
+    return sorted([d.name for d in base_dir.iterdir() if d.is_dir() and not d.name.startswith(".")])
+
 
 class UpscalerWrapper(nn.Module):
     """Wraps FastUpscaler with optional Nvidia Optical Flow.
@@ -70,54 +76,100 @@ class UpscalerWrapper(nn.Module):
         return self.model(current_lr, prev_hr=prev_hr, flow=flow)
 
 
-# ---------- Public loader ----------
+_upscaler_cache: dict[str, Tuple[FastUpscaler, tuple[int, int], tuple[int, int]]] = {}
 
-def load_upscaler(cfg: AppSettings) -> Optional[UpscalerWrapper]:
-    global _nvof_available
 
-    u = cfg.upscaler
-    if not u.enabled:
-        log.info("Upscaler disabled by config")
+def get_cached_upscaler(model_name: str, cfg: AppSettings) -> Optional[Tuple[FastUpscaler, tuple[int, int], tuple[int, int]]]:
+    if model_name in _upscaler_cache:
+        return _upscaler_cache[model_name]
+
+    model_dir = cfg.resolve_path("upscaler/model_weights") / model_name
+    if not model_dir.exists():
+        log.error("Upscaler model dir not found: %s", model_dir)
         return None
 
-    lr_size = tuple(u.lr_size)
-    hr_size = tuple(u.hr_size)
+    yaml_path = model_dir / "config.yaml"
+    ckpt_path = model_dir / "model.pth"
+
+    in_channels = cfg.upscaler.in_channels
+    out_channels = cfg.upscaler.out_channels
+    num_feat = cfg.upscaler.num_feat
+    num_blocks = cfg.upscaler.num_blocks
+    expansion = cfg.upscaler.expansion
+    lr_size = tuple(cfg.upscaler.lr_size)
+    hr_size = tuple(cfg.upscaler.hr_size)
+
+    if yaml_path.exists():
+        try:
+            model_cfg = OmegaConf.load(str(yaml_path))
+            u_model = model_cfg.upscaler.model
+            in_channels = getattr(u_model, "in_channels", in_channels)
+            out_channels = getattr(u_model, "out_channels", out_channels)
+            num_feat = getattr(u_model, "num_feat", num_feat)
+            num_blocks = getattr(u_model, "num_blocks", num_blocks)
+            expansion = getattr(u_model, "expansion", expansion)
+            if hasattr(model_cfg, "data"):
+                data_cfg = model_cfg.data
+                bh = getattr(data_cfg, "base_height", None)
+                bw = getattr(data_cfg, "base_width", None)
+                scale = getattr(data_cfg, "scale", None)
+                if bh is not None and bw is not None:
+                    lr_size = (bh, bw)
+                    if scale is not None:
+                        hr_size = (bh * scale, bw * scale)
+        except Exception as e:
+            log.warning("Failed to parse config.yaml for %s, using defaults: %s", model_name, e)
 
     model = FastUpscaler(
-        in_channels=u.in_channels,
-        out_channels=u.out_channels,
-        num_feat=u.num_feat,
-        num_blocks=u.num_blocks,
-        expansion=u.expansion,
+        in_channels=in_channels,
+        out_channels=out_channels,
+        num_feat=num_feat,
+        num_blocks=num_blocks,
+        expansion=expansion,
         lr_size=lr_size,
         hr_size=hr_size,
     )
 
-    ckpt_path = cfg.resolve_path(u.checkpoint)
     try:
         ckpt = torch.load(str(ckpt_path), map_location=DEVICE)
         state_dict = ckpt.get("model", ckpt)
         model.load_state_dict(state_dict)
-    except FileNotFoundError:
-        log.error("Upscaler checkpoint not found: %s", ckpt_path)
+    except Exception as e:
+        log.error("Failed to load upscaler checkpoint: %s", e)
         return None
 
     model.eval().to(DEVICE)
     model.fuse()
-    log.info("Upscaler loaded & fused: %s  lr=%s hr=%s", ckpt_path, lr_size, hr_size)
+    log.info("Upscaler loaded & fused: %s  lr=%s hr=%s", model_name, lr_size, hr_size)
+    
+    _upscaler_cache[model_name] = (model, lr_size, hr_size)
+    return _upscaler_cache[model_name]
+
+
+def create_upscaler_wrapper(model_name: str, flow_backend: str, cfg: AppSettings) -> Optional[UpscalerWrapper]:
+    global _flow_backend_name
+    cached = get_cached_upscaler(model_name, cfg)
+    if cached is None:
+        return None
+    model, lr_size, hr_size = cached
 
     from src.utils.flow_factory import FlowEstimatorFactory
     optical_flow = FlowEstimatorFactory.create(
-        height=lr_size[0], width=lr_size[1], backend=cfg.upscaler.flow_backend,
+        height=lr_size[0], width=lr_size[1], backend=flow_backend,
         nvof_preset=cfg.upscaler.nvof_preset,
     )
 
-    global _flow_backend_name
     _flow_backend_name = optical_flow.backend_name
-
-    nvof_available = optical_flow.is_active and optical_flow.backend_name != "ZeroFlow"
-    log.info("Flow backend: %s (active=%s)", optical_flow.backend_name, nvof_available)
 
     wrapper = UpscalerWrapper(model, lr_size, hr_size, optical_flow=optical_flow)
     wrapper.eval()
     return wrapper
+
+
+def load_upscaler(cfg: AppSettings) -> Optional[UpscalerWrapper]:
+    if not cfg.upscaler.enabled:
+        log.info("Upscaler disabled by config")
+        return None
+
+    model_name = Path(cfg.upscaler.checkpoint).parent.name
+    return create_upscaler_wrapper(model_name, cfg.upscaler.flow_backend, cfg)

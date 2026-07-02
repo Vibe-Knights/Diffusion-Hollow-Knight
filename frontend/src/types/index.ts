@@ -8,6 +8,8 @@ export interface ServerConfig {
   interpolation_exp: number
   nvof_available: boolean
   use_optical_flow: boolean
+  flow_backends: string[]
+  upscale_models: string[]
 }
 
 export interface InputMessage {
@@ -21,6 +23,9 @@ export interface SettingsMessage {
   interpolation?: boolean
   interpolation_exp?: number
   use_optical_flow?: boolean
+  flow_backend?: string
+  upscale_model?: string
+  interpolation_model?: string
 }
 
 export type ConnectionState = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'error'

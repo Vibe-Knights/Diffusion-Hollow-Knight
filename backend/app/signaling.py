@@ -17,7 +17,6 @@ log = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# Global state
 active_sessions: Dict[str, RTCPeerConnection] = {}
 _shared_sampler = None
 _shared_upscaler = None
@@ -50,26 +49,32 @@ class ConfigResponse(BaseModel):
     upscaler_available: bool
     interpolation_available: bool
     interpolation_models: list[str]
+    upscale_models: list[str]
+    flow_backends: list[str]
     interpolation_exp: int
-    nvof_available: bool          # keep for backward compat
-    flow_backend: str               # NEW
+    nvof_available: bool
+    flow_backend: str
     use_optical_flow: bool
 
 
 @router.get("/config")
 async def get_config() -> ConfigResponse:
-    from app.pipeline.upscaler_loader import get_flow_backend
+    from app.pipeline.upscaler_loader import get_flow_backend, get_available_upscale_models
+    from app.pipeline.interpolator_loader import get_available_interpolation_models
+    
+    upscale_models = get_available_upscale_models()
+    interpolation_models = get_available_interpolation_models()
+    flow_backends = ["NVOF", "OpenCV", "IFNet", "Zero"]
+
     return ConfigResponse(
         fps=settings.server.fps,
         max_sessions=settings.server.max_sessions,
         active_sessions=len(active_sessions),
-        upscaler_available=_shared_upscaler is not None,
-        interpolation_available=_shared_interpolator is not None,
-        interpolation_models=[
-            "RIFEv4.25lite_1018",
-            "RIFE_trained_v6",
-            "RIFE_trained_model_v3.6",
-        ],
+        upscaler_available=len(upscale_models) > 0,
+        interpolation_available=len(interpolation_models) > 0,
+        interpolation_models=interpolation_models,
+        upscale_models=upscale_models,
+        flow_backends=flow_backends,
         interpolation_exp=settings.interpolation.exp,
         nvof_available=_nvof_available,
         flow_backend=get_flow_backend(),
@@ -102,7 +107,6 @@ async def handle_offer(request: OfferRequest) -> OfferResponse:
     pc_id = f"pc_{id(pc)}"
     active_sessions[pc_id] = pc
 
-    # Create game session for this connection
     session = GameSession(
         sampler=_shared_sampler,
         upscaler=_shared_upscaler,
@@ -115,7 +119,6 @@ async def handle_offer(request: OfferRequest) -> OfferResponse:
     video_track = AIVideoStreamTrack(session, fps=settings.server.fps)
     pc.addTrack(video_track)
 
-    # Handle data channel for inputs
     @pc.on("datachannel")
     def on_datachannel(channel):
         log.info("DataChannel opened: %s (session %s)", channel.label, pc_id)
@@ -124,7 +127,6 @@ async def handle_offer(request: OfferRequest) -> OfferResponse:
         def on_message(message):
             handle_input_message(session, message)
 
-    # Cleanup on disconnect — guard against double-cleanup
     _cleaned = False
 
     async def _cleanup(reason: str = "") -> None:
