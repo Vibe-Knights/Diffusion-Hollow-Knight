@@ -1,6 +1,12 @@
 # --- Display & Timing ---
 fps: 20  # Set to "unlimited" for no frame rate cap
 unlimited_fps: false
+stall_log_threshold: 0.5
+profile_sync_cuda: false
+heartbeat_interval: 1.0
+debug_overlay: false
+key_hold_seconds: 0.35
+display_backend: pygame  # pygame, opencv, ffplay, none
 display_width: 1708
 display_height: 960
 
@@ -35,10 +41,10 @@ upscaler:
 
 # --- Interpolator ---
 interpolator:
-  enabled: false
+  enabled: true
   model_name: "RIFEv4.25lite_1018"
   weights_path: "interpolation/model_weights/RIFEv4.25lite_1018"
-  exp: 2
+  exp: 1
   padding_divider: 64
 
 # --- Hydra ---

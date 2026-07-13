@@ -1,4 +1,5 @@
 import logging
+import subprocess
 import sys
 import time
 from contextlib import contextmanager
@@ -10,7 +11,6 @@ import cv2
 import numpy as np
 import torch
 import torch.nn.functional as F
-from pynput import keyboard
 
 import hydra
 from omegaconf import DictConfig, OmegaConf
@@ -39,33 +39,44 @@ TRACKED_KEYS = {
     "space": "JUMP",
 }
 ACTION_ORDER = ["LEFT", "RIGHT", "UP", "DOWN", "JUMP", "ATTACK", "HEAL"]
-PRESSED_KEYS: set = set()
+KEY_LAST_SEEN: dict[str, float] = {}
+CV_KEY_TO_TRACKED = {
+    ord("a"): "a",
+    ord("d"): "d",
+    ord("w"): "w",
+    ord("s"): "s",
+    ord("k"): "k",
+    ord("j"): "j",
+    ord(" "): "space",
+}
 
 
-def on_press(key):
-    try:
-        if hasattr(key, "char") and key.char is not None:
-            PRESSED_KEYS.add(key.char.lower())
-        elif key == keyboard.Key.space:
-            PRESSED_KEYS.add("space")
-    except Exception:
-        pass
+def register_cv_key(key_code: int, now: float) -> bool:
+    if key_code < 0:
+        return False
+    low_byte = key_code & 0xFF
+    if low_byte == 27:
+        return True
+    if ord("A") <= low_byte <= ord("Z"):
+        low_byte += ord("a") - ord("A")
+    key = CV_KEY_TO_TRACKED.get(low_byte)
+    if key is not None:
+        KEY_LAST_SEEN[key] = now
+    return False
 
 
-def on_release(key):
-    try:
-        if hasattr(key, "char") and key.char is not None:
-            PRESSED_KEYS.discard(key.char.lower())
-        elif key == keyboard.Key.space:
-            PRESSED_KEYS.discard("space")
-    except Exception:
-        pass
+def encode_action(now: float, key_hold_seconds: float) -> int:
+    stale_keys = [key for key, seen in KEY_LAST_SEEN.items() if now - seen > key_hold_seconds]
+    for key in stale_keys:
+        KEY_LAST_SEEN.pop(key, None)
+
+    return encode_active_keys(set(KEY_LAST_SEEN))
 
 
-def encode_action() -> int:
+def encode_active_keys(active_keys: set[str]) -> int:
     act = {k: 0 for k in ACTION_ORDER}
     for key, name in TRACKED_KEYS.items():
-        if key in PRESSED_KEYS:
+        if key in active_keys:
             act[name] = 1
     encoded, mult = 0, 1
     for name in ACTION_ORDER:
@@ -73,6 +84,22 @@ def encode_action() -> int:
             encoded += mult
         mult *= 2
     return encoded
+
+
+def encode_pygame_action(pygame, pressed) -> int:
+    active_keys = set()
+    for key, pygame_key in (
+        ("a", pygame.K_a),
+        ("d", pygame.K_d),
+        ("w", pygame.K_w),
+        ("s", pygame.K_s),
+        ("k", pygame.K_k),
+        ("j", pygame.K_j),
+        ("space", pygame.K_SPACE),
+    ):
+        if pressed[pygame_key]:
+            active_keys.add(key)
+    return encode_active_keys(active_keys)
 
 
 def preprocess_frame(frame: np.ndarray, old_format: bool) -> torch.Tensor:
@@ -223,6 +250,11 @@ def _load_init_state(cfg: DictConfig):
     return frames, actions
 
 
+def _sync_cuda(enabled: bool) -> None:
+    if enabled and torch.cuda.is_available():
+        torch.cuda.synchronize()
+
+
 @dataclass
 class TimingStats:
     log_interval: int = 100
@@ -351,11 +383,17 @@ def run_inference_sync(
     disp_w = cfg.display_width
     unlimited_fps = cfg.get("unlimited_fps", False)
     frame_time = 0.0 if unlimited_fps else 1.0 / cfg.fps
+    stall_log_threshold = float(cfg.get("stall_log_threshold", 0.5))
+    profile_sync_cuda = bool(cfg.get("profile_sync_cuda", False))
+    heartbeat_interval = float(cfg.get("heartbeat_interval", 1.0))
+    debug_overlay = bool(cfg.get("debug_overlay", False))
+    key_hold_seconds = float(cfg.get("key_hold_seconds", 0.35))
+    display_backend = str(cfg.get("display_backend", "opencv")).lower()
+    if display_backend not in {"opencv", "pygame", "ffplay", "none"}:
+        raise ValueError("display_backend must be one of: opencv, pygame, ffplay, none")
     old_format = cfg.world_model.old_format
 
     cv2.setNumThreads(0)
-    listener = keyboard.Listener(on_press=on_press, on_release=on_release)
-    listener.start()
 
     frames, actions = _load_init_state(cfg)
 
@@ -376,27 +414,124 @@ def run_inference_sync(
         f"[Runtime] Mode: {'Unlimited FPS' if unlimited_fps else f'{cfg.fps} FPS capped'} | "
         f"upscaler={upscaler is not None}, interpolator={interpolator is not None}"
     )
+    log.info(
+        f"[Runtime] Stall log threshold: {stall_log_threshold:.2f}s | "
+        f"profile_sync_cuda={profile_sync_cuda} | heartbeat={heartbeat_interval:.2f}s | "
+        f"debug_overlay={debug_overlay} | display_backend={display_backend} | "
+        f"key_hold={key_hold_seconds:.2f}s"
+    )
+
+    pygame = None
+    pygame_screen = None
+    pygame_surface = None
+    if display_backend == "pygame":
+        try:
+            import pygame as pygame_module
+        except ImportError as exc:
+            raise RuntimeError(
+                "display_backend=pygame requires pygame. Install it in rife-env: "
+                "python -m pip install pygame"
+            ) from exc
+        pygame = pygame_module
+        pygame.init()
+        pygame.display.set_caption("DIAMOND World Model")
+        pygame_screen = pygame.display.set_mode((disp_w, disp_h))
+        pygame_surface = pygame.Surface((disp_w, disp_h))
+
+    ffplay = None
+    if display_backend == "ffplay":
+        ffplay_fps = str(cfg.fps if not unlimited_fps else 60)
+        ffplay = subprocess.Popen(
+            [
+                "ffplay",
+                "-loglevel", "error",
+                "-fflags", "nobuffer",
+                "-flags", "low_delay",
+                "-framedrop",
+                "-sync", "ext",
+                "-f", "rawvideo",
+                "-pixel_format", "bgr24",
+                "-video_size", f"{disp_w}x{disp_h}",
+                "-framerate", ffplay_fps,
+                "-i", "-",
+            ],
+            stdin=subprocess.PIPE,
+        )
 
     try:
+        last_heartbeat = time.perf_counter()
+        loops_since_heartbeat = 0
+        displayed_frames = 0
+
         while True:
             t0 = time.perf_counter()
+            stage_start = t0
+            stage_times: list[tuple[str, float]] = []
 
-            pipeline.update_actions(encode_action())
+            def mark_stage(name: str) -> None:
+                nonlocal stage_start
+                now = time.perf_counter()
+                stage_times.append((name, now - stage_start))
+                stage_start = now
+
+            if display_backend == "pygame":
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT or (
+                        event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE
+                    ):
+                        return
+                encoded_action = encode_pygame_action(pygame, pygame.key.get_pressed())
+            else:
+                encoded_action = encode_action(time.perf_counter(), key_hold_seconds)
+
+            pipeline.update_actions(encoded_action)
+            mark_stage("input")
             with timing.generation_context():
                 prev_lr = pipeline.frames[:, -1]
                 next_frame = pipeline.generate()
+            _sync_cuda(profile_sync_cuda)
+            mark_stage("generation")
             with timing.interpolation_context():
                 frames_to_display = pipeline.interpolate(prev_lr, next_frame)
+            _sync_cuda(profile_sync_cuda)
+            mark_stage("interpolation")
 
             timing.add_frames(len(frames_to_display))
 
             with timing.upscale_context():
                 for lr_frame in frames_to_display:
                     display = pipeline.upscale_and_render(lr_frame)
-                    cv2.imshow("DIAMOND World Model", display)
-
-                    if cv2.waitKey(1) & 0xFF == 27:
-                        return
+                    _sync_cuda(profile_sync_cuda)
+                    mark_stage("upscale_render")
+                    displayed_frames += 1
+                    if debug_overlay:
+                        cv2.putText(
+                            display,
+                            f"frame {displayed_frames}",
+                            (24, 48),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            1.0,
+                            (0, 255, 0),
+                            2,
+                            cv2.LINE_AA,
+                        )
+                    if display_backend == "opencv":
+                        cv2.imshow("DIAMOND World Model", display)
+                        if register_cv_key(cv2.waitKeyEx(1), time.perf_counter()):
+                            return
+                    elif display_backend == "pygame":
+                        rgb = np.ascontiguousarray(display[:, :, ::-1].swapaxes(0, 1))
+                        pygame.surfarray.blit_array(pygame_surface, rgb)
+                        pygame_screen.blit(pygame_surface, (0, 0))
+                        pygame.display.flip()
+                    elif display_backend == "ffplay":
+                        if ffplay is None or ffplay.stdin is None or ffplay.poll() is not None:
+                            return
+                        try:
+                            ffplay.stdin.write(display.tobytes())
+                        except BrokenPipeError:
+                            return
+                    mark_stage("display")
 
 
             if timing.should_log():
@@ -406,10 +541,45 @@ def run_inference_sync(
                 elapsed = time.perf_counter() - t0
                 sleep_time = max(0.0, frame_time - elapsed)
                 if sleep_time > 0:
-                    time.sleep(sleep_time)
+                    if display_backend == "opencv":
+                        if register_cv_key(
+                            cv2.waitKeyEx(max(1, int(sleep_time * 1000))),
+                            time.perf_counter(),
+                        ):
+                            return
+                    else:
+                        time.sleep(sleep_time)
+                mark_stage("pace")
+
+            total_elapsed = time.perf_counter() - t0
+            loops_since_heartbeat += 1
+            if total_elapsed >= stall_log_threshold:
+                stages = " | ".join(f"{name}={dt * 1000:.0f}ms" for name, dt in stage_times)
+                message = (
+                    f"[Stall] loop={total_elapsed * 1000:.0f}ms | "
+                    f"frames={len(frames_to_display)} | {stages}"
+                )
+                log.warning(message)
+                print(message, flush=True)
+
+            now = time.perf_counter()
+            if heartbeat_interval > 0 and now - last_heartbeat >= heartbeat_interval:
+                print(
+                    f"[Heartbeat] loops={loops_since_heartbeat} | "
+                    f"last_loop={total_elapsed * 1000:.0f}ms",
+                    flush=True,
+                )
+                last_heartbeat = now
+                loops_since_heartbeat = 0
     finally:
-        cv2.destroyAllWindows()
-        listener.stop()
+        if ffplay is not None:
+            if ffplay.stdin is not None:
+                ffplay.stdin.close()
+            ffplay.terminate()
+        if display_backend == "opencv":
+            cv2.destroyAllWindows()
+        if pygame is not None:
+            pygame.quit()
 
 
 @hydra.main(version_base=None, config_path="inference_config", config_name="config")
