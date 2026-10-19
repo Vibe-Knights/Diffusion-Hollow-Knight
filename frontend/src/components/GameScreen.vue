@@ -55,40 +55,79 @@ defineExpose({
   renderFrame,
 })
 
-const activeKeys = ref<Record<string, boolean>>({})
+const activeKeys = ref<Record<string, boolean>>({
+  w: false,
+  a: false,
+  s: false,
+  d: false,
+  k: false,
+})
 
-const GAME_KEYS = new Set([
-  'arrowleft', 'arrowright', 'arrowup', 'arrowdown',
-  'a', 'd', 'w', 's',
-  ' ', 'k', 'j',
-])
+// Action mapping supporting EN/RU layouts, arrow keys, and standard platformer bindings
+function resolveActionKey(e: KeyboardEvent): string | null {
+  const code = e.code
+  const key = e.key ? e.key.toLowerCase() : ''
+
+  // W / Jump (W, ArrowUp, Space, Cyrillic Ц)
+  if (code === 'KeyW' || code === 'ArrowUp' || code === 'Space' || key === 'w' || key === 'arrowup' || key === ' ' || key === 'ц') {
+    return 'w'
+  }
+  // A / Left (A, ArrowLeft, Cyrillic Ф)
+  if (code === 'KeyA' || code === 'ArrowLeft' || key === 'a' || key === 'arrowleft' || key === 'ф') {
+    return 'a'
+  }
+  // S / Down (S, ArrowDown, Cyrillic Ы)
+  if (code === 'KeyS' || code === 'ArrowDown' || key === 's' || key === 'arrowdown' || key === 'ы') {
+    return 's'
+  }
+  // D / Right (D, ArrowRight, Cyrillic В)
+  if (code === 'KeyD' || code === 'ArrowRight' || key === 'd' || key === 'arrowright' || key === 'в') {
+    return 'd'
+  }
+  // K / Attack (K, KeyZ, KeyX, Cyrillic Л, Я, Ч)
+  if (code === 'KeyK' || code === 'KeyZ' || code === 'KeyX' || key === 'k' || key === 'z' || key === 'x' || key === 'л') {
+    return 'k'
+  }
+  return null
+}
 
 function onKeyDown(e: KeyboardEvent) {
-  const key = e.key.toLowerCase()
-  if (GAME_KEYS.has(key)) {
+  const actionKey = resolveActionKey(e)
+  if (actionKey) {
     e.preventDefault()
-    activeKeys.value[key] = true
-    emit('keyaction', { key: e.key, state: 'down' })
+    activeKeys.value[actionKey] = true
+    emit('keyaction', { key: actionKey, state: 'down' })
   }
 }
 
 function onKeyUp(e: KeyboardEvent) {
-  const key = e.key.toLowerCase()
-  if (GAME_KEYS.has(key)) {
+  const actionKey = resolveActionKey(e)
+  if (actionKey) {
     e.preventDefault()
-    activeKeys.value[key] = false
-    emit('keyaction', { key: e.key, state: 'up' })
+    activeKeys.value[actionKey] = false
+    emit('keyaction', { key: actionKey, state: 'up' })
+  }
+}
+
+function onWindowBlur() {
+  for (const k of Object.keys(activeKeys.value)) {
+    if (activeKeys.value[k]) {
+      activeKeys.value[k] = false
+      emit('keyaction', { key: k, state: 'up' })
+    }
   }
 }
 
 onMounted(() => {
   window.addEventListener('keydown', onKeyDown)
   window.addEventListener('keyup', onKeyUp)
+  window.addEventListener('blur', onWindowBlur)
 })
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeyDown)
   window.removeEventListener('keyup', onKeyUp)
+  window.removeEventListener('blur', onWindowBlur)
 })
 
 function onDoubleClick() {
@@ -111,76 +150,35 @@ function onDoubleClick() {
       @dblclick="onDoubleClick"
     />
 
-    <!-- Real-time HUD (FPS, Latency & Engine) overlay -->
-    <div
-      v-if="connectionState === 'connected'"
-      class="absolute top-4 right-4 bg-black/70 backdrop-blur-md border border-white/10 rounded-lg px-3 py-1.5 flex items-center gap-3 text-xs font-mono pointer-events-none z-20 shadow-2xl"
-    >
-      <div class="flex items-center gap-1.5">
-        <span class="w-2 h-2 rounded-full" :class="(fps ?? 0) >= 15 ? 'bg-emerald-400' : (fps ?? 0) >= 8 ? 'bg-amber-400' : 'bg-rose-400 animate-pulse'"></span>
-        <span class="text-white font-bold">{{ (fps ?? 0) > 0 ? (fps ?? 0).toFixed(1) : '--' }}</span>
-        <span class="text-white/60 text-[10px]">FPS</span>
-      </div>
-      <div class="h-3 w-[1px] bg-white/20"></div>
-      <div class="flex items-center gap-1 text-white/80">
-        <span>{{ (stepTimeMs ?? 0) > 0 ? stepTimeMs : '--' }}</span>
-        <span class="text-white/60 text-[10px]">ms</span>
-      </div>
-      <div class="h-3 w-[1px] bg-white/20"></div>
-      <span class="text-[10px] uppercase tracking-wider font-semibold" :class="engineBackend === 'webgpu' ? 'text-emerald-400' : 'text-amber-400'">
-        {{ engineBackend === 'webgpu' ? 'WEBGPU' : 'WASM (CPU)' }}
-      </span>
-    </div>
-
-    <!-- CPU WASM Fallback Warning Banner -->
-    <div
-      v-if="connectionState === 'connected' && engineBackend === 'wasm'"
-      class="absolute top-4 left-4 z-30 max-w-sm bg-black/85 backdrop-blur-md border border-amber-500/50 rounded-lg p-3 text-xs shadow-2xl space-y-1.5 pointer-events-auto"
-    >
-      <div class="flex items-center gap-2 text-amber-400 font-bold">
-        <span class="material-symbols-outlined text-[16px]">warning</span>
-        <span>Running on CPU Fallback (~3 FPS)</span>
-      </div>
-      <p class="text-white/70 text-[11px] leading-relaxed">
-        WebGPU is unavailable in this browser (Zen/Firefox/Safari Worker).
-      </p>
-      <div class="pt-1 text-[11px] text-emerald-400 font-medium">
-        💡 For <span class="font-bold underline">20 FPS WebGPU</span>: Open in Google Chrome or Microsoft Edge!
-      </div>
-    </div>
-
-    <div class="absolute bottom-6 left-6 p-4 rounded-lg flex gap-8 z-20 items-end">
+    <!-- Original In-Game Control Key Indicator (W, A, S, D, K) -->
+    <div class="absolute bottom-6 left-6 p-4 rounded-lg flex gap-8 z-20 items-end pointer-events-none">
       <div class="flex flex-col items-center gap-2">
         <div class="flex justify-center w-full">
-          <div :class="['w-12 h-12 flex flex-col items-center justify-center font-label-caps rounded-xl border border-white/20 transition-all duration-75', activeKeys['w'] ? 'bg-white/20 scale-95 text-white' : 'bg-black/40 text-white/70']">
+          <div :class="['w-12 h-12 flex flex-col items-center justify-center font-label-caps rounded-xl border border-white/20 transition-all duration-75', activeKeys['w'] ? 'bg-white/25 scale-95 text-white ring-2 ring-white/50 shadow-lg' : 'bg-black/40 text-white/70']">
             <span class="text-[16px] font-bold">W</span>
             <span class="text-[9px] opacity-70 mt-0.5">Jump</span>
           </div>
         </div>
         <div class="flex items-center gap-2">
-          <div :class="['w-12 h-12 flex flex-col items-center justify-center font-label-caps rounded-xl border border-white/20 transition-all duration-75', activeKeys['a'] ? 'bg-white/20 scale-95 text-white' : 'bg-black/40 text-white/70']">
+          <div :class="['w-12 h-12 flex flex-col items-center justify-center font-label-caps rounded-xl border border-white/20 transition-all duration-75', activeKeys['a'] ? 'bg-white/25 scale-95 text-white ring-2 ring-white/50 shadow-lg' : 'bg-black/40 text-white/70']">
             <span class="text-[16px] font-bold">A</span>
             <span class="text-[9px] opacity-70 mt-0.5">Left</span>
           </div>
-          <div :class="['w-12 h-12 flex flex-col items-center justify-center font-label-caps rounded-xl border border-white/20 transition-all duration-75', activeKeys['s'] ? 'bg-white/20 scale-95 text-white' : 'bg-black/40 text-white/70']">
+          <div :class="['w-12 h-12 flex flex-col items-center justify-center font-label-caps rounded-xl border border-white/20 transition-all duration-75', activeKeys['s'] ? 'bg-white/25 scale-95 text-white ring-2 ring-white/50 shadow-lg' : 'bg-black/40 text-white/70']">
             <span class="text-[16px] font-bold">S</span>
             <span class="text-[9px] opacity-70 mt-0.5">Down</span>
           </div>
-          <div :class="['w-12 h-12 flex flex-col items-center justify-center font-label-caps rounded-xl border border-white/20 transition-all duration-75', activeKeys['d'] ? 'bg-white/20 scale-95 text-white' : 'bg-black/40 text-white/70']">
+          <div :class="['w-12 h-12 flex flex-col items-center justify-center font-label-caps rounded-xl border border-white/20 transition-all duration-75', activeKeys['d'] ? 'bg-white/25 scale-95 text-white ring-2 ring-white/50 shadow-lg' : 'bg-black/40 text-white/70']">
             <span class="text-[16px] font-bold">D</span>
             <span class="text-[9px] opacity-70 mt-0.5">Right</span>
           </div>
         </div>
       </div>
       
-      <div class="flex items-center gap-2">
-        <div :class="['w-12 h-12 flex flex-col items-center justify-center font-label-caps rounded-xl border border-white/20 transition-all duration-75', activeKeys['k'] ? 'bg-white/20 scale-95 text-white' : 'bg-black/40 text-white/70']">
+      <div class="flex items-center">
+        <div :class="['w-12 h-12 flex flex-col items-center justify-center font-label-caps rounded-xl border border-white/20 transition-all duration-75', activeKeys['k'] ? 'bg-white/25 scale-95 text-white ring-2 ring-white/50 shadow-lg' : 'bg-black/40 text-white/70']">
           <span class="text-[16px] font-bold">K</span>
           <span class="text-[9px] opacity-70 mt-0.5">Attack</span>
-        </div>
-        <div :class="['w-12 h-12 flex flex-col items-center justify-center font-label-caps rounded-xl border border-white/20 transition-all duration-75', activeKeys['j'] ? 'bg-white/20 scale-95 text-white' : 'bg-black/40 text-white/70']">
-          <span class="text-[16px] font-bold">J</span>
-          <span class="text-[9px] opacity-70 mt-0.5">Heal</span>
         </div>
       </div>
     </div>
@@ -190,31 +188,26 @@ function onDoubleClick() {
       v-if="connectionState === 'idle'"
       class="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-hollow-bg/80"
     >
-      <p class="text-3xl font-bold text-hollow-accent tracking-wider glow-text">Diffusion Hollow Knight</p>
-      <p class="text-hollow-muted text-sm">Client-Side World Model (WebGPU + onnxruntime-web)</p>
-      <p class="text-hollow-muted text-xs mt-2">Press <span class="font-mono text-hollow-text font-bold bg-white/10 px-2 py-1 rounded">START GAME</span> to begin</p>
+      <p class="text-2xl font-bold text-hollow-accent">Diffusion Hollow Knight</p>
+      <p class="text-hollow-muted">Press <span class="font-mono text-hollow-text">START STREAM</span> to start</p>
     </div>
 
     <!-- Connecting / Loading overlay -->
     <div
-      v-if="gameLoading"
-      class="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-hollow-bg/85 backdrop-blur-sm"
+      v-if="connectionState === 'connecting' || gameLoading"
+      class="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-hollow-bg/80"
     >
       <svg class="animate-spin h-8 w-8 text-hollow-accent" viewBox="0 0 24 24">
         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
         <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/>
       </svg>
-      <p class="text-hollow-accent font-bold">{{ loadingStage || 'Warming up diffusion model…' }}</p>
-      
+      <p class="text-hollow-accent font-bold">{{ loadingStage || 'Connecting…' }}</p>
       <div v-if="loadingPercent !== undefined && loadingPercent > 0" class="w-64 bg-white/10 rounded-full h-2 overflow-hidden mt-2">
         <div
           class="bg-hollow-accent h-full transition-all duration-150 ease-out rounded-full"
           :style="{ width: `${loadingPercent}%` }"
         ></div>
       </div>
-      <p v-if="loadingPercent !== undefined && loadingPercent > 0" class="text-hollow-muted text-xs font-mono">
-        {{ loadingPercent }}%
-      </p>
     </div>
 
     <!-- Error state overlay -->
@@ -222,7 +215,7 @@ function onDoubleClick() {
       v-if="connectionState === 'error'"
       class="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-hollow-bg/80"
     >
-      <p class="text-red-400 font-bold">Engine Error</p>
+      <p class="text-red-400 font-bold">Connection Error</p>
       <p class="text-hollow-muted text-sm max-w-md text-center">{{ error }}</p>
     </div>
 
@@ -231,8 +224,8 @@ function onDoubleClick() {
       v-if="connectionState === 'disconnected'"
       class="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-hollow-bg/80"
     >
-      <p class="text-yellow-400 font-bold">Game Paused</p>
-      <p class="text-hollow-muted text-sm">Press START GAME to resume</p>
+      <p class="text-yellow-400 font-bold">Disconnected</p>
+      <p class="text-hollow-muted text-sm">Press START STREAM to rejoin</p>
     </div>
   </main>
 </template>

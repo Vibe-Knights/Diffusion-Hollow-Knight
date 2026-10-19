@@ -107,9 +107,14 @@ export function chwToRgba(
 
   let outIdx = 0;
   for (let i = 0; i < planeSize; i++) {
-    const r = chw[rOffset + i];
-    const g = chw[gOffset + i];
-    const b = chw[bOffset + i];
+    let r = chw[rOffset + i];
+    let g = chw[gOffset + i];
+    let b = chw[bOffset + i];
+
+    // Sanitize NaNs/Infs to mid-gray to prevent black screen lockup
+    if (r !== r) r = 0.5;
+    if (g !== g) g = 0.5;
+    if (b !== b) b = 0.5;
 
     rgba[outIdx]     = r <= 0 ? 0 : r >= 1 ? 255 : (r * 255 + 0.5) | 0;
     rgba[outIdx + 1] = g <= 0 ? 0 : g >= 1 ? 255 : (g * 255 + 0.5) | 0;

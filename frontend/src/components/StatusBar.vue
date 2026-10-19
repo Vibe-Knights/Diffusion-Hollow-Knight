@@ -1,64 +1,52 @@
 <script setup lang="ts">
-import type { ConnectionState, EngineBackend } from '@/types'
+import type { ConnectionState } from '@/types'
 
 defineProps<{
   connectionState: ConnectionState
-  fps?: number
-  stepTimeMs?: number
-  engineBackend?: EngineBackend
-  activeSessions?: number
-  maxSessions?: number
+  fps: number
+  activeSessions: number
+  maxSessions: number
 }>()
 
 const stateLabels: Record<ConnectionState, string> = {
-  idle: 'Engine Idle',
-  connecting: 'Initializing WebGPU…',
-  connected: 'Engine Running',
-  disconnected: 'Paused',
-  error: 'Engine Error',
+  idle: 'Idle',
+  connecting: 'Connecting…',
+  connected: 'Connected',
+  disconnected: 'Disconnected',
+  error: 'Error',
 }
 
 const stateColors: Record<ConnectionState, string> = {
-  idle: 'bg-outline-variant',
-  connecting: 'bg-amber-400',
-  connected: 'bg-emerald-400',
-  disconnected: 'bg-rose-400',
+  idle: 'bg-hollow-muted',
+  connecting: 'bg-yellow-400',
+  connected: 'bg-green-400',
+  disconnected: 'bg-red-400',
   error: 'bg-red-500',
 }
 </script>
 
 <template>
-  <footer class="h-9 ml-0 md:ml-64 px-6 bg-surface-container-lowest border-t border-outline-variant/10 flex items-center justify-between text-xs text-on-surface-variant shrink-0 z-30 font-mono">
-    <div class="flex items-center gap-5">
+  <footer class="flex items-center justify-between px-6 py-2 bg-hollow-panel border-t border-hollow-border text-xs text-hollow-muted shrink-0 z-30">
+    <div class="flex items-center gap-4">
       <!-- Connection indicator -->
-      <div class="flex items-center gap-2">
+      <div class="flex items-center gap-1.5">
         <span class="w-2 h-2 rounded-full" :class="stateColors[connectionState]" />
-        <span class="text-on-surface font-sans font-medium text-[11px]">{{ stateLabels[connectionState] }}</span>
+        <span>{{ stateLabels[connectionState] }}</span>
       </div>
 
-      <!-- FPS & Latency -->
-      <div v-if="connectionState === 'connected'" class="flex items-center gap-3">
-        <span class="text-on-surface font-bold">
-          {{ (fps ?? 0) > 0 ? (fps ?? 0).toFixed(1) : '--' }} FPS
-        </span>
-        <span v-if="(stepTimeMs ?? 0) > 0" class="text-on-surface-variant/70 text-[11px]">
-          {{ stepTimeMs }} ms
-        </span>
-        <span class="px-1.5 py-0.2 rounded bg-surface-container-high text-[10px] text-primary uppercase font-bold">
-          {{ engineBackend || 'WEBGPU' }}
-        </span>
-      </div>
+      <!-- FPS -->
+      <span v-if="connectionState === 'connected'" class="font-bold text-on-surface font-mono">
+        {{ fps > 0 ? fps.toFixed(1) : '0.0' }} FPS
+      </span>
     </div>
 
-    <div class="flex items-center gap-5">
-      <!-- Client Architecture Badge -->
-      <span class="hidden sm:inline text-on-surface-variant/60 text-[11px]">
-        DIAMOND World Model • In-Browser Client Inference
-      </span>
+    <div class="flex items-center gap-4">
+      <!-- Sessions -->
+      <span>Sessions: {{ activeSessions }}/{{ maxSessions }}</span>
 
       <!-- Controls hint -->
-      <span class="text-on-surface-variant/80 text-[11px] font-sans">
-        WASD — move &nbsp; Space / W — jump &nbsp; K — attack &nbsp; J — heal
+      <span class="text-hollow-muted/60">
+        WASD / Arrows — move &nbsp; Space / W — jump &nbsp; K — attack
       </span>
     </div>
   </footer>

@@ -23,9 +23,9 @@ export function useGameEngine() {
   const loadingStage: Ref<string> = ref('');
   const loadingPercent: Ref<number> = ref(0);
 
-  const upscalerOn: Ref<boolean> = ref(false);
+  const upscalerOn: Ref<boolean> = ref(true);
   const upscalerAvailable: Ref<boolean> = ref(true);
-  const samplingSteps: Ref<number> = ref(1);
+  const samplingSteps: Ref<number> = ref(2);
 
   const availableSeeds: Ref<SeedManifestItem[]> = ref([]);
   const activeSeed: Ref<string> = ref('seed_1');

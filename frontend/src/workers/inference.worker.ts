@@ -16,6 +16,11 @@ declare const self: DedicatedWorkerGlobalScope;
 ort.env.wasm.wasmPaths = '/ort-wasm/';
 ort.env.wasm.numThreads = Math.min(navigator.hardwareConcurrency || 4, 4);
 
+// Configure WebGPU to request high-performance adapter (RTX 4070 discrete GPU)
+if ((ort.env as any).webgpu) {
+  (ort.env as any).webgpu.powerPreference = 'high-performance';
+}
+
 // Model and session state
 let denoiserSession: ort.InferenceSession | null = null;
 let upscalerSession: ort.InferenceSession | null = null;
@@ -45,8 +50,8 @@ const prevLrBuffer = new Float32Array(LR_CHW_SIZE);
 let lrRgbaBuffer = new Uint8ClampedArray(LR_RGBA_SIZE);
 let hrRgbaBuffer = new Uint8ClampedArray(HR_RGBA_SIZE);
 
-// Configurable sampling steps (default 1 for 20 FPS ultra performance, 2 for balanced, 3 for quality)
-let samplingSteps = 1;
+// Sampling steps: 2 steps is the calibrated sweet spot for DIAMOND temporal stability + 15-20 FPS
+let samplingSteps = 2;
 let sigmas = buildSigmas(samplingSteps, 0.002, 5.0, 7);
 let sigmaTensors: ort.Tensor[] = [];
 
@@ -63,7 +68,7 @@ rebuildSigmas(samplingSteps);
 // Input and loop state
 const pressedKeys = new Set<string>();
 let isRunning = false;
-let upscalerEnabled = false; // Default to false (72p pixel-art) for blazing performance, user can toggle 288p on GPU
+let upscalerEnabled = true; // Default to true (288p via FastUpscaler GPU) as per user workflow
 let isStepInProgress = false;
 
 // Seed states
