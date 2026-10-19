@@ -138,17 +138,22 @@ const emit = defineEmits<{
             <div class="flex flex-col gap-2">
               <div class="flex items-center justify-between">
                 <span class="font-body-md text-body-md text-on-surface">Sampling Steps</span>
-                <span class="text-[10px] text-on-surface-variant font-mono">{{ (samplingSteps ?? 2) === 2 ? 'High Speed' : 'High Quality' }}</span>
+                <span class="text-[10px] text-on-surface-variant font-mono">{{ (samplingSteps ?? 2) === 1 ? 'Ultra Fast (20 FPS)' : (samplingSteps ?? 2) === 2 ? 'High Speed (10 FPS)' : 'High Quality' }}</span>
               </div>
               <div class="flex bg-surface-container-high rounded p-1 border border-outline-variant/20">
                 <button
+                  @click="emit('change-steps', 1)"
+                  class="flex-1 font-label-caps text-[9px] py-1 text-center rounded transition-colors"
+                  :class="(samplingSteps ?? 2) === 1 ? 'bg-on-surface/10 text-on-surface border border-on-surface/20' : 'text-on-surface-variant hover:text-on-surface'"
+                >1 Step (20 FPS)</button>
+                <button
                   @click="emit('change-steps', 2)"
-                  class="flex-1 font-label-caps text-[10px] py-1 text-center rounded transition-colors"
+                  class="flex-1 font-label-caps text-[9px] py-1 text-center rounded transition-colors"
                   :class="(samplingSteps ?? 2) === 2 ? 'bg-on-surface/10 text-on-surface border border-on-surface/20' : 'text-on-surface-variant hover:text-on-surface'"
-                >2 Steps (Fast)</button>
+                >2 Steps (10 FPS)</button>
                 <button
                   @click="emit('change-steps', 3)"
-                  class="flex-1 font-label-caps text-[10px] py-1 text-center rounded transition-colors"
+                  class="flex-1 font-label-caps text-[9px] py-1 text-center rounded transition-colors"
                   :class="(samplingSteps ?? 2) === 3 ? 'bg-on-surface/10 text-on-surface border border-on-surface/20' : 'text-on-surface-variant hover:text-on-surface'"
                 >3 Steps (Quality)</button>
               </div>

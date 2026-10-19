@@ -24,7 +24,7 @@ export function useGameEngine() {
 
   const upscalerOn: Ref<boolean> = ref(false);
   const upscalerAvailable: Ref<boolean> = ref(true);
-  const samplingSteps: Ref<number> = ref(2);
+  const samplingSteps: Ref<number> = ref(1);
 
   const availableSeeds: Ref<SeedManifestItem[]> = ref([]);
   const activeSeed: Ref<string> = ref('seed_1');

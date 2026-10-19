@@ -107,12 +107,20 @@ async function runTest() {
   // Test toggling Sampling Steps to 3 Steps (Quality)
   console.log('[Test] Toggling Sampling Steps to 3 Steps (Quality)...');
   const steps3Btn = page.locator('button:has-text("3 Steps (Quality)")');
-  await steps3Btn.click();
-  await page.waitForTimeout(2000);
+  // Test toggling Sampling Steps to 1 Step (20 FPS) with Upscaler OFF
+  console.log('[Test] Toggling Upscaler back to OFF (72p pixelated)...');
+  const upscalerOffBtn = page.locator('button:has-text("OFF (72p)")');
+  await upscalerOffBtn.click();
+  await page.waitForTimeout(1000);
 
-  // Take final screenshot with upscaler ON and 3 steps
-  await page.screenshot({ path: 'client_game_upscaled.png' });
-  console.log('[Test] Saved screenshot to client_game_upscaled.png');
+  console.log('[Test] Toggling Sampling Steps to 1 Step (20 FPS)...');
+  const steps1Btn = page.locator('button:has-text("1 Step (20 FPS)")');
+  await steps1Btn.click();
+  await page.waitForTimeout(3000);
+
+  // Take final screenshot with 1 step
+  await page.screenshot({ path: 'client_game_1step_20fps.png' });
+  console.log('[Test] Saved screenshot to client_game_1step_20fps.png');
 
   await browser.close();
   console.log('[Test] Browser test passed successfully!');

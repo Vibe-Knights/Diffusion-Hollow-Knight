@@ -45,8 +45,8 @@ const prevLrBuffer = new Float32Array(LR_CHW_SIZE);
 let lrRgbaBuffer = new Uint8ClampedArray(LR_RGBA_SIZE);
 let hrRgbaBuffer = new Uint8ClampedArray(HR_RGBA_SIZE);
 
-// Configurable sampling steps (default 2 for high performance, 3 for quality)
-let samplingSteps = 2;
+// Configurable sampling steps (default 1 for 20 FPS ultra performance, 2 for balanced, 3 for quality)
+let samplingSteps = 1;
 let sigmas = buildSigmas(samplingSteps, 0.002, 5.0, 7);
 let sigmaTensors: ort.Tensor[] = [];
 

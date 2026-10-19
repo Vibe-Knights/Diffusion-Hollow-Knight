@@ -61,7 +61,7 @@ export function buildSigmas(
   const sigmas = new Float32Array(numSteps + 1);
 
   for (let i = 0; i < numSteps; i++) {
-    const l = i / (numSteps - 1);
+    const l = numSteps <= 1 ? 0 : i / (numSteps - 1);
     const s = maxInvRho + l * (minInvRho - maxInvRho);
     sigmas[i] = Math.pow(s, rho);
   }
