@@ -159,15 +159,32 @@ async function initEngine(forceBackend?: EngineBackend) {
       }
     }
 
-    // 4. Initialize Upscaler ONNX session
-    post({ type: 'init-progress', stage: 'Initializing Upscaler session', percent: 88 });
+    // 4. Initialize Upscaler ONNX session on WebGPU
+    post({ type: 'init-progress', stage: 'Initializing FastUpscaler (GPU)', percent: 88 });
     try {
-      upscalerSession = await ort.InferenceSession.create(upscalerBuffer, {
-        executionProviders: [activeBackend, 'wasm'],
-      });
+      if (activeBackend === 'webgpu') {
+        console.log('[Worker] Initializing FastUpscaler on WebGPU...');
+        upscalerSession = await ort.InferenceSession.create(upscalerBuffer, {
+          executionProviders: ['webgpu'],
+        });
+        console.log('[Worker] FastUpscaler successfully running on WebGPU!');
+      } else {
+        upscalerSession = await ort.InferenceSession.create(upscalerBuffer, {
+          executionProviders: ['wasm'],
+        });
+        console.log('[Worker] FastUpscaler running on WASM CPU!');
+      }
     } catch (e) {
-      console.warn('[Worker] Upscaler initialization failed, upscaler disabled:', e);
-      upscalerSession = null;
+      console.warn('[Worker] WebGPU for Upscaler failed, falling back to WASM:', e);
+      try {
+        upscalerSession = await ort.InferenceSession.create(upscalerBuffer, {
+          executionProviders: ['wasm'],
+        });
+        console.log('[Worker] FastUpscaler fallback to WASM CPU succeeded!');
+      } catch (err2) {
+        console.error('[Worker] Upscaler initialization failed completely:', err2);
+        upscalerSession = null;
+      }
     }
 
     // 5. Load initial seed
