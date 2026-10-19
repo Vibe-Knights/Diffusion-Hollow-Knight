@@ -3,9 +3,25 @@
  * Ensures large .onnx models (58MB) only download once and load instantly from disk on future visits.
  */
 
-const CACHE_NAME = 'dhk-model-cache-v1';
+const CACHE_NAME = 'dhk-model-cache-v2';
 
 export type ProgressCallback = (loaded: number, total: number, percentage: number) => void;
+
+export async function clearModelCache(): Promise<void> {
+  if (typeof caches !== 'undefined') {
+    try {
+      const keys = await caches.keys();
+      for (const key of keys) {
+        if (key.startsWith('dhk-model-cache')) {
+          await caches.delete(key);
+        }
+      }
+      console.log('[Cache] Model caches cleared successfully');
+    } catch (e) {
+      console.warn('[Cache] Error clearing cache:', e);
+    }
+  }
+}
 
 export async function fetchWithCache(
   url: string,
@@ -89,3 +105,4 @@ export async function fetchWithCache(
 
   return buffer;
 }
+

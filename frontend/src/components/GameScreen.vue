@@ -117,7 +117,7 @@ function onDoubleClick() {
       class="absolute top-4 right-4 bg-black/70 backdrop-blur-md border border-white/10 rounded-lg px-3 py-1.5 flex items-center gap-3 text-xs font-mono pointer-events-none z-20 shadow-2xl"
     >
       <div class="flex items-center gap-1.5">
-        <span class="w-2 h-2 rounded-full" :class="(fps ?? 0) >= 15 ? 'bg-emerald-400' : (fps ?? 0) >= 8 ? 'bg-amber-400' : 'bg-cyan-400 animate-pulse'"></span>
+        <span class="w-2 h-2 rounded-full" :class="(fps ?? 0) >= 15 ? 'bg-emerald-400' : (fps ?? 0) >= 8 ? 'bg-amber-400' : 'bg-rose-400 animate-pulse'"></span>
         <span class="text-white font-bold">{{ (fps ?? 0) > 0 ? (fps ?? 0).toFixed(1) : '--' }}</span>
         <span class="text-white/60 text-[10px]">FPS</span>
       </div>
@@ -127,9 +127,26 @@ function onDoubleClick() {
         <span class="text-white/60 text-[10px]">ms</span>
       </div>
       <div class="h-3 w-[1px] bg-white/20"></div>
-      <span class="text-[10px] uppercase tracking-wider text-hollow-accent font-semibold">
-        {{ engineBackend || 'WEBGPU' }}
+      <span class="text-[10px] uppercase tracking-wider font-semibold" :class="engineBackend === 'webgpu' ? 'text-emerald-400' : 'text-amber-400'">
+        {{ engineBackend === 'webgpu' ? 'WEBGPU' : 'WASM (CPU)' }}
       </span>
+    </div>
+
+    <!-- CPU WASM Fallback Warning Banner -->
+    <div
+      v-if="connectionState === 'connected' && engineBackend === 'wasm'"
+      class="absolute top-4 left-4 z-30 max-w-sm bg-black/85 backdrop-blur-md border border-amber-500/50 rounded-lg p-3 text-xs shadow-2xl space-y-1.5 pointer-events-auto"
+    >
+      <div class="flex items-center gap-2 text-amber-400 font-bold">
+        <span class="material-symbols-outlined text-[16px]">warning</span>
+        <span>Running on CPU Fallback (~3 FPS)</span>
+      </div>
+      <p class="text-white/70 text-[11px] leading-relaxed">
+        WebGPU is unavailable in this browser (Zen/Firefox/Safari Worker).
+      </p>
+      <div class="pt-1 text-[11px] text-emerald-400 font-medium">
+        💡 For <span class="font-bold underline">20 FPS WebGPU</span>: Open in Google Chrome or Microsoft Edge!
+      </div>
     </div>
 
     <div class="absolute bottom-6 left-6 p-4 rounded-lg flex gap-8 z-20 items-end">

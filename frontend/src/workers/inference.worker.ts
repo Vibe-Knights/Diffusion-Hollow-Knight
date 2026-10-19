@@ -71,8 +71,27 @@ let seedManifest: SeedManifestItem[] = [];
 let currentSeedId = 'seed_1';
 let currentSeedData: ArrayBuffer | null = null;
 
-// FPS calculation with EMA smoothing for immediate responsiveness
+// FPS calculation with rolling average excluding initial warmup frames
 let currentFps = 0;
+let frameCount = 0;
+const recentStepTimes: number[] = [];
+
+// High-performance macrotask yield using MessageChannel (0.05ms vs 4.2ms setTimeout)
+const yieldChannel = new MessageChannel();
+let yieldResolve: (() => void) | null = null;
+yieldChannel.port1.onmessage = () => {
+  if (yieldResolve) {
+    const r = yieldResolve;
+    yieldResolve = null;
+    r();
+  }
+};
+function yieldToEventLoop(): Promise<void> {
+  return new Promise((resolve) => {
+    yieldResolve = resolve;
+    yieldChannel.port2.postMessage(null);
+  });
+}
 
 function post(msg: WorkerOutMessage, transfer?: Transferable[]) {
   if (transfer && transfer.length > 0) {
@@ -142,6 +161,18 @@ async function initEngine(forceBackend?: EngineBackend) {
     });
 
     // 3. Initialize Denoiser ONNX session (Try WebGPU first unless forced to WASM)
+    const webgpuOptions: ort.InferenceSession.SessionOptions = {
+      executionProviders: [
+        {
+          name: 'webgpu',
+          preferredLayout: 'NCHW',
+        },
+      ],
+      graphOptimizationLevel: 'all',
+      enableCpuMemArena: true,
+      enableMemPattern: true,
+    };
+
     if (forceBackend === 'wasm') {
       post({ type: 'init-progress', stage: 'Initializing WASM SIMD session', percent: 75 });
       denoiserSession = await ort.InferenceSession.create(denoiserBuffer, {
@@ -153,9 +184,7 @@ async function initEngine(forceBackend?: EngineBackend) {
       post({ type: 'init-progress', stage: 'Initializing WebGPU acceleration', percent: 75 });
       try {
         console.log('[Worker] Attempting WebGPU execution provider...');
-        denoiserSession = await ort.InferenceSession.create(denoiserBuffer, {
-          executionProviders: ['webgpu'],
-        });
+        denoiserSession = await ort.InferenceSession.create(denoiserBuffer, webgpuOptions);
         activeBackend = 'webgpu';
         console.log('[Worker] Denoiser initialized on WebGPU!');
       } catch (gpuErr) {
@@ -174,9 +203,7 @@ async function initEngine(forceBackend?: EngineBackend) {
     try {
       if (activeBackend === 'webgpu') {
         console.log('[Worker] Initializing FastUpscaler on WebGPU...');
-        upscalerSession = await ort.InferenceSession.create(upscalerBuffer, {
-          executionProviders: ['webgpu'],
-        });
+        upscalerSession = await ort.InferenceSession.create(upscalerBuffer, webgpuOptions);
         console.log('[Worker] FastUpscaler successfully running on WebGPU!');
       } else {
         upscalerSession = await ort.InferenceSession.create(upscalerBuffer, {
@@ -236,26 +263,41 @@ async function step() {
     const prevActTensor = new ort.Tensor('int64', actBuffer, [1, CONTEXT_LEN]);
 
     // 3. EDM Euler sampling loop
-    for (let s = 0; s < samplingSteps; s++) {
-      const sigmaCurr = sigmas[s];
-      const sigmaNext = sigmas[s + 1];
-
+    if (samplingSteps === 1) {
+      // 1-step direct denoise: with sigmaCurr = 5.0 and sigmaNext = 0.0,
+      // the Euler update formula yields x = denoised directly.
       const feeds = {
         noisy_next_obs: new ort.Tensor('float32', xBuffer, [1, 3, H, W]),
-        sigma: sigmaTensors[s],
+        sigma: sigmaTensors[0],
         prev_obs: prevObsTensor,
         prev_act: prevActTensor,
       };
 
       const results = await denoiserSession.run(feeds);
       const denoised = results.denoised.data as Float32Array;
+      xBuffer.set(denoised);
+    } else {
+      for (let s = 0; s < samplingSteps; s++) {
+        const sigmaCurr = sigmas[s];
+        const sigmaNext = sigmas[s + 1];
 
-      // Euler update: x = x + ((x - denoised) / sigmaCurr) * (sigmaNext - sigmaCurr)
-      const dt = sigmaNext - sigmaCurr;
-      const invSigma = 1.0 / sigmaCurr;
-      for (let j = 0; j < LR_CHW_SIZE; j++) {
-        const d = (xBuffer[j] - denoised[j]) * invSigma;
-        xBuffer[j] += d * dt;
+        const feeds = {
+          noisy_next_obs: new ort.Tensor('float32', xBuffer, [1, 3, H, W]),
+          sigma: sigmaTensors[s],
+          prev_obs: prevObsTensor,
+          prev_act: prevActTensor,
+        };
+
+        const results = await denoiserSession.run(feeds);
+        const denoised = results.denoised.data as Float32Array;
+
+        // Euler update: x = x + ((x - denoised) / sigmaCurr) * (sigmaNext - sigmaCurr)
+        const dt = sigmaNext - sigmaCurr;
+        const invSigma = 1.0 / sigmaCurr;
+        for (let j = 0; j < LR_CHW_SIZE; j++) {
+          const d = (xBuffer[j] - denoised[j]) * invSigma;
+          xBuffer[j] += d * dt;
+        }
       }
     }
 
@@ -314,14 +356,20 @@ async function step() {
       lrRgbaBuffer = new Uint8ClampedArray(LR_RGBA_SIZE);
     }
 
-    // Calculate FPS with EMA smoothing for immediate responsiveness
+    // Calculate FPS with rolling average, skipping the first warmup frame
     const now = performance.now();
     const stepTimeMs = now - tStart;
-    const instantFps = stepTimeMs > 0 ? (1000 / stepTimeMs) : 0;
-    if (currentFps === 0) {
-      currentFps = instantFps;
+    frameCount++;
+
+    if (frameCount > 1) {
+      recentStepTimes.push(stepTimeMs);
+      if (recentStepTimes.length > 6) {
+        recentStepTimes.shift();
+      }
+      const avgStepTime = recentStepTimes.reduce((acc, v) => acc + v, 0) / recentStepTimes.length;
+      currentFps = avgStepTime > 0 ? (1000 / avgStepTime) : 0;
     } else {
-      currentFps = currentFps * 0.75 + instantFps * 0.25;
+      currentFps = stepTimeMs > 0 ? (1000 / stepTimeMs) : 0;
     }
 
     console.log(`[Worker Frame] Total: ${stepTimeMs.toFixed(1)}ms (Denoiser ${samplingSteps}x: ${tDenoise.toFixed(1)}ms, Upscaler: ${tUpscale.toFixed(1)}ms) | FPS: ${currentFps.toFixed(1)}`);
@@ -346,11 +394,9 @@ async function step() {
 }
 
 async function loop() {
-  if (!isRunning) return;
-  await step();
-  // Keep loop running without blocking worker message queue
-  if (isRunning) {
-    setTimeout(loop, 0);
+  while (isRunning) {
+    await step();
+    await yieldToEventLoop();
   }
 }
 

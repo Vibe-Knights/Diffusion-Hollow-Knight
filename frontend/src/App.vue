@@ -25,6 +25,7 @@ const {
   sendSettings,
   purgeBuffer,
   setSeed,
+  clearCacheAndReload,
   onFrame,
 } = useGameEngine()
 
@@ -123,6 +124,7 @@ onMounted(() => {
       @change-interpolation-model="onInterpolationModelChange"
       @change-seed="onChangeSeed"
       @purge-buffer="onPurgeBuffer"
+      @clear-cache="clearCacheAndReload"
       @connect="onConnect"
       @disconnect="disconnect"
     />

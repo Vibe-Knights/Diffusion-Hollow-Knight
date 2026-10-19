@@ -33,6 +33,7 @@ const emit = defineEmits<{
   'change-seed': [val: string]
   'change-steps': [val: number]
   'purge-buffer': []
+  'clear-cache': []
   'connect': []
   'disconnect': []
 }>()
@@ -47,12 +48,18 @@ const emit = defineEmits<{
         <div class="h-4 w-[1px] bg-outline-variant mx-2"></div>
         <div class="flex items-center gap-2">
           <div class="soul-orb" :class="{ 'opacity-40': !connected }"></div>
-          <span class="font-label-caps text-label-caps text-on-surface">Engine: {{ connected ? (engineBackend?.toUpperCase() || 'WEBGPU') : 'OFFLINE' }}</span>
+          <span class="font-label-caps text-label-caps text-on-surface">
+            Engine: {{ connected ? (engineBackend === 'webgpu' ? 'WEBGPU (GPU)' : 'WASM (CPU FALLBACK)') : 'OFFLINE' }}
+          </span>
         </div>
         <div v-if="connected" class="flex items-center gap-2 px-3 py-1 rounded-full bg-surface-container-high border border-outline-variant/30 text-xs font-mono shadow-sm">
-          <span class="inline-block w-2 h-2 rounded-full" :class="(fps ?? 0) >= 15 ? 'bg-emerald-400' : (fps ?? 0) >= 8 ? 'bg-amber-400' : 'bg-cyan-400 animate-pulse'"></span>
+          <span class="inline-block w-2 h-2 rounded-full" :class="(fps ?? 0) >= 15 ? 'bg-emerald-400' : (fps ?? 0) >= 8 ? 'bg-amber-400' : 'bg-rose-400 animate-pulse'"></span>
           <span class="font-bold text-on-surface">{{ (fps ?? 0) > 0 ? (fps ?? 0).toFixed(1) : '--' }} FPS</span>
           <span class="text-on-surface-variant text-[11px]">({{ (stepTimeMs ?? 0) > 0 ? stepTimeMs : '--' }} ms)</span>
+        </div>
+        <div v-if="connected && engineBackend === 'wasm'" class="hidden lg:flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[11px] font-mono">
+          <span class="material-symbols-outlined text-[14px] text-amber-400">info</span>
+          <span>Open in Chrome/Edge for 20 FPS WebGPU</span>
         </div>
       </div>
       <div class="flex items-center gap-6">
@@ -173,7 +180,9 @@ const emit = defineEmits<{
                 </div>
                 <div class="flex justify-between items-center">
                   <span>Execution:</span>
-                  <span class="text-primary font-bold">{{ engineBackend?.toUpperCase() || 'WEBGPU' }}</span>
+                  <span class="font-bold" :class="engineBackend === 'webgpu' ? 'text-emerald-400' : 'text-amber-400'">
+                    {{ engineBackend === 'webgpu' ? 'WebGPU (Hardware 20 FPS)' : 'WASM (CPU Fallback ~3 FPS)' }}
+                  </span>
                 </div>
                 <div class="flex justify-between items-center">
                   <span>World Model:</span>
@@ -191,9 +200,17 @@ const emit = defineEmits<{
       <div class="px-gutter mt-auto pb-4 pt-4 border-t border-outline-variant/10">
         <button 
           @click="emit('purge-buffer')"
-          class="w-full mb-4 border border-outline-variant/30 text-error font-label-caps text-label-caps py-2 rounded hover:bg-error/10 hover:border-error/50 transition-colors active:scale-95"
+          class="w-full mb-2 border border-outline-variant/30 text-error font-label-caps text-label-caps py-2 rounded hover:bg-error/10 hover:border-error/50 transition-colors active:scale-95"
         >
           PURGE BUFFER
+        </button>
+        <button 
+          @click="emit('clear-cache')"
+          class="w-full mb-3 border border-outline-variant/20 text-on-surface-variant text-[10px] font-label-caps py-1.5 rounded hover:bg-surface-variant/40 hover:text-on-surface transition-colors active:scale-95 flex items-center justify-center gap-1.5"
+          title="Clears browser Model Cache and reloads the page"
+        >
+          <span class="material-symbols-outlined text-[13px]">cleaning_services</span>
+          CLEAR CACHE & RELOAD
         </button>
         <div class="flex justify-between">
           <a class="flex items-center gap-2 text-on-surface-variant opacity-70 hover:text-on-surface transition-colors" href="https://github.com/Vibe-Knights/Diffusion-Hollow-Knight" target="_blank">

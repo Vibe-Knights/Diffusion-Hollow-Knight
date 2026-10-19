@@ -1,4 +1,5 @@
 import { ref, type Ref, shallowRef } from 'vue';
+import { clearModelCache } from '@/engine/cache';
 import type {
   ConnectionState,
   EngineBackend,
@@ -65,7 +66,9 @@ export function useGameEngine() {
           activeSeed.value = msg.activeSeed;
           gameLoading.value = false;
           connectionState.value = 'connected';
-          // Auto-start generation upon ready
+          // Explicitly sync current settings to worker
+          worker?.postMessage({ type: 'set-steps', steps: samplingSteps.value });
+          worker?.postMessage({ type: 'set-upscaler', enabled: upscalerOn.value });
           worker?.postMessage({ type: 'start' });
           break;
 
@@ -165,6 +168,11 @@ export function useGameEngine() {
     }
   }
 
+  async function clearCacheAndReload(): Promise<void> {
+    await clearModelCache();
+    window.location.reload();
+  }
+
   return {
     connectionState,
     engineBackend,
@@ -185,6 +193,7 @@ export function useGameEngine() {
     sendSettings,
     purgeBuffer,
     setSeed,
+    clearCacheAndReload,
     onFrame,
   };
 }
