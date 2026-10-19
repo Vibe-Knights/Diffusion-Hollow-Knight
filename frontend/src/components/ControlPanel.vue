@@ -14,6 +14,9 @@ defineProps<{
   flowBackend: string
   upscaleModel: string
   interpolationModel: string
+  engineBackend?: string
+  availableSeeds?: Array<{ id: string; name: string }>
+  activeSeed?: string
 }>()
 
 const emit = defineEmits<{
@@ -24,6 +27,8 @@ const emit = defineEmits<{
   'change-flow-backend': [val: string]
   'change-upscale-model': [val: string]
   'change-interpolation-model': [val: string]
+  'change-seed': [val: string]
+  'purge-buffer': []
   'connect': []
   'disconnect': []
 }>()
@@ -33,12 +38,12 @@ const emit = defineEmits<{
   <div>
     <header class="bg-surface-container-lowest/90 backdrop-blur-xl border-b border-outline-variant/20 shadow-[0_0_15px_rgba(0,0,0,0.5)] flex justify-between items-center h-16 px-gutter w-full z-50 fixed top-0 left-0">
       <div class="flex items-center gap-4">
-        <img alt="Vibe Knights Authentic Logo" class="w-8 h-8 object-contain rounded-full" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCeEcwdRrxZ6uTPiUbJcy3p0zqEQGwjTynASLX2-xlzSCdBm7Fnz3fYqbJkFVo5bU3j5lDBjapwKvZ-Y-RBvRYsSGBkGlsR3TfM4Yl9Kg2mBDSKlS0G9iWsdXR5WPxvbzst3M7t78mIzqsEQGa_ikuadjpPzUFkCtKESfAqn3WFFtLuIJqV-RgHyMdhPnzETmOXrjOdblivSjttzqGnPRxQ6knPyYD_E_LFVlg5IP-fbWgxhygiKMz_-mGbX-lVopZaZLI4oJK7eL2q">
+        <img alt="Vibe Knights Authentic Logo" class="w-8 h-8 object-contain rounded-full" src="/assets/logo.png">
         <span class="font-headline-md text-headline-md text-on-surface tracking-tighter glow-text">VIBE KNIGHTS</span>
         <div class="h-4 w-[1px] bg-outline-variant mx-2"></div>
         <div class="flex items-center gap-2">
-          <div class="soul-orb"></div>
-          <span class="font-label-caps text-label-caps text-on-surface">Connection: {{ connected ? 'STABLE' : 'OFFLINE' }}</span>
+          <div class="soul-orb" :class="{ 'opacity-40': !connected }"></div>
+          <span class="font-label-caps text-label-caps text-on-surface">Engine: {{ connected ? (engineBackend?.toUpperCase() || 'WEBGPU') : 'OFFLINE' }}</span>
         </div>
       </div>
       <div class="flex items-center gap-6">
@@ -47,11 +52,11 @@ const emit = defineEmits<{
           class="bg-surface-bright text-on-surface border border-outline-variant/30 font-label-caps text-label-caps px-6 py-2 rounded hover:bg-surface-variant transition-colors duration-300 active:scale-95 transition-transform flex items-center gap-2"
         >
           <span class="material-symbols-outlined text-[16px]">{{ connected ? 'stop_circle' : 'play_circle' }}</span>
-          {{ connected ? 'STOP STREAM' : 'START STREAM' }}
+          {{ connected ? 'STOP GAME' : 'START GAME' }}
         </button>
         <div class="flex gap-4">
-          <button class="text-on-surface-variant hover:text-on-surface transition-colors duration-300 active:scale-95 transition-transform">
-            <span class="material-symbols-outlined">signal_cellular_alt</span>
+          <button class="text-on-surface-variant hover:text-on-surface transition-colors duration-300 active:scale-95 transition-transform" title="WebGPU / WASM Mode">
+            <span class="material-symbols-outlined">memory</span>
           </button>
           <button class="text-on-surface-variant hover:text-on-surface transition-colors duration-300 active:scale-95 transition-transform">
             <span class="material-symbols-outlined">settings</span>
@@ -65,24 +70,38 @@ const emit = defineEmits<{
         <div class="border-outline-variant/10">
           <div class="flex flex-col gap-4 px-2">
             
+            <!-- Starting Seed Scene -->
             <div class="flex flex-col gap-2">
-              <span class="font-body-md text-body-md text-on-surface">Upscaler</span>
+              <span class="font-body-md text-body-md text-on-surface">Starting Scene</span>
+              <select 
+                :value="activeSeed || 'seed_1'"
+                @change="emit('change-seed', ($event.target as HTMLSelectElement).value)"
+                class="bg-surface-container-high rounded p-1.5 border border-outline-variant/20 font-label-caps text-[10px] text-on-surface-variant focus:border-on-surface/50 focus:outline-none"
+              >
+                <option v-if="!availableSeeds || availableSeeds.length === 0" value="seed_1">Forgotten Crossroads</option>
+                <option v-for="s in availableSeeds" :key="s.id" :value="s.id">{{ s.name }}</option>
+              </select>
+            </div>
+
+            <!-- Neural Upscaler Toggle -->
+            <div class="flex flex-col gap-2">
+              <span class="font-body-md text-body-md text-on-surface">Upscaler (FastUpscaler)</span>
               <div class="flex bg-surface-container-high rounded p-1 border border-outline-variant/20" :class="{ 'opacity-50 pointer-events-none': !upscalerAvailable }">
-                <button @click="emit('toggle-upscaler', false)" class="flex-1 font-label-caps text-[10px] py-1 text-center rounded transition-colors" :class="!upscalerOn ? 'bg-on-surface/10 text-on-surface border border-on-surface/20' : 'text-on-surface-variant hover:text-on-surface'">OFF</button>
-                <button @click="emit('toggle-upscaler', true)" class="flex-1 font-label-caps text-[10px] py-1 text-center rounded transition-colors" :class="upscalerOn ? 'bg-on-surface/10 text-on-surface border border-on-surface/20' : 'text-on-surface-variant hover:text-on-surface'">ON</button>
+                <button @click="emit('toggle-upscaler', false)" class="flex-1 font-label-caps text-[10px] py-1 text-center rounded transition-colors" :class="!upscalerOn ? 'bg-on-surface/10 text-on-surface border border-on-surface/20' : 'text-on-surface-variant hover:text-on-surface'">OFF (72p)</button>
+                <button @click="emit('toggle-upscaler', true)" class="flex-1 font-label-caps text-[10px] py-1 text-center rounded transition-colors" :class="upscalerOn ? 'bg-on-surface/10 text-on-surface border border-on-surface/20' : 'text-on-surface-variant hover:text-on-surface'">ON (288p)</button>
               </div>
             </div>
             
             <div class="flex flex-col gap-2">
               <span class="font-body-md text-body-md text-on-surface">Model Weights</span>
               <select 
-                :value="upscaleModel"
+                :value="upscaleModel || 'FastUpscaler 1.6M'"
                 @change="emit('change-upscale-model', ($event.target as HTMLSelectElement).value)"
                 class="bg-surface-container-high rounded p-1.5 border border-outline-variant/20 font-label-caps text-[10px] text-on-surface-variant focus:border-on-surface/50 focus:outline-none"
                 :disabled="!upscalerAvailable || !upscalerOn"
                 :class="{ 'opacity-50': !upscalerAvailable || !upscalerOn }"
               >
-                <option v-if="upscaleModels.length === 0">v1.0 Stable</option>
+                <option value="FastUpscaler 1.6M">FastUpscaler 1.6M (Fused)</option>
                 <option v-for="model in upscaleModels" :key="model" :value="model">{{ model }}</option>
               </select>
             </div>
@@ -90,7 +109,7 @@ const emit = defineEmits<{
             <div class="flex flex-col gap-2">
               <span class="font-body-md text-body-md text-on-surface">Optical flow</span>
               <div class="flex bg-surface-container-high rounded p-1 border border-outline-variant/20">
-                <button v-for="backend in (flowBackends.length ? flowBackends : ['NVOF', 'OpenCV', 'IFNet', 'Zero'])" :key="backend"
+                <button v-for="backend in (flowBackends.length ? flowBackends : ['Zero', 'NVOF', 'OpenCV', 'IFNet'])" :key="backend"
                   @click="emit('change-flow-backend', backend); emit('toggle-optical-flow', backend !== 'Zero')"
                   class="flex-1 font-label-caps text-[10px] py-1 text-center rounded transition-colors"
                   :class="flowBackend === backend ? 'bg-on-surface/10 text-on-surface border border-on-surface/20' : 'text-on-surface-variant hover:text-on-surface'"
@@ -107,37 +126,35 @@ const emit = defineEmits<{
             </div>
             
             <div class="flex flex-col gap-2">
-              <span class="font-body-md text-body-md text-on-surface">Model Weights</span>
-              <select 
-                :value="interpolationModel"
-                @change="emit('change-interpolation-model', ($event.target as HTMLSelectElement).value)"
-                class="bg-surface-container-high rounded p-1.5 border border-outline-variant/20 font-label-caps text-[10px] text-on-surface-variant focus:border-on-surface/50 focus:outline-none"
-                :disabled="!interpolationAvailable || !interpolationOn"
-                :class="{ 'opacity-50': !interpolationAvailable || !interpolationOn }"
-              >
-                <option v-if="interpolationModels.length === 0">v1.0 Stable</option>
-                <option v-for="model in interpolationModels" :key="model" :value="model">{{ model }}</option>
-              </select>
+              <span class="font-body-md text-body-md text-on-surface">Architecture</span>
+              <div class="bg-surface-container-high rounded p-2 border border-outline-variant/20 text-[11px] text-on-surface-variant font-mono space-y-1">
+                <div>Model: DIAMOND (15.1M)</div>
+                <div>Sampler: Euler (EDM Karras)</div>
+                <div>Steps: 3 steps/frame</div>
+                <div>Client: onnxruntime-web</div>
+              </div>
             </div>
           </div>
         </div>
       </div>
       <div class="px-gutter mt-auto pb-4 pt-4 border-t border-outline-variant/10">
-        <button class="w-full mb-4 border border-outline-variant/30 text-error font-label-caps text-label-caps py-2 rounded hover:bg-error/10 hover:border-error/50 transition-colors">
+        <button 
+          @click="emit('purge-buffer')"
+          class="w-full mb-4 border border-outline-variant/30 text-error font-label-caps text-label-caps py-2 rounded hover:bg-error/10 hover:border-error/50 transition-colors active:scale-95"
+        >
           PURGE BUFFER
         </button>
         <div class="flex justify-between">
-          <a class="flex items-center gap-2 text-on-surface-variant opacity-70 hover:text-on-surface transition-colors" href="#">
+          <a class="flex items-center gap-2 text-on-surface-variant opacity-70 hover:text-on-surface transition-colors" href="https://github.com/Vibe-Knights/Diffusion-Hollow-Knight" target="_blank">
             <span class="material-symbols-outlined text-[18px]">help_outline</span>
-            <span class="font-body-md text-body-md">Support</span>
+            <span class="font-body-md text-body-md">GitHub</span>
           </a>
-          <a class="flex items-center gap-2 text-on-surface-variant opacity-70 hover:text-on-surface transition-colors" href="#">
-            <span class="material-symbols-outlined text-[18px]">terminal</span>
-            <span class="font-body-md text-body-md">Logs</span>
-          </a>
+          <button class="flex items-center gap-2 text-on-surface-variant opacity-70 hover:text-on-surface transition-colors" @click="emit('purge-buffer')">
+            <span class="material-symbols-outlined text-[18px]">restart_alt</span>
+            <span class="font-body-md text-body-md">Reset</span>
+          </button>
         </div>
       </div>
     </nav>
   </div>
 </template>
-

@@ -210,5 +210,7 @@ __marimo__/
 upscaler/dataset/
 node_modules/
 frontend/dist/
+client_game_*.png
 
 /.worktrees/
+

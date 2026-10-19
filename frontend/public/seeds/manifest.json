@@ -1,0 +1,54 @@
+[
+  {
+    "id": "seed_1",
+    "name": "Forgotten Crossroads - Station",
+    "file": "seeds/seed_1.bin",
+    "thumbnail": "seeds/seed_1.png",
+    "frames": 4,
+    "shape": [
+      4,
+      3,
+      72,
+      128
+    ]
+  },
+  {
+    "id": "seed_2",
+    "name": "Forgotten Crossroads - Arena",
+    "file": "seeds/seed_2.bin",
+    "thumbnail": "seeds/seed_2.png",
+    "frames": 4,
+    "shape": [
+      4,
+      3,
+      72,
+      128
+    ]
+  },
+  {
+    "id": "seed_3",
+    "name": "Forgotten Crossroads - Caverns",
+    "file": "seeds/seed_3.bin",
+    "thumbnail": "seeds/seed_3.png",
+    "frames": 4,
+    "shape": [
+      4,
+      3,
+      72,
+      128
+    ]
+  },
+  {
+    "id": "seed_4",
+    "name": "Forgotten Crossroads - Depths",
+    "file": "seeds/seed_4.bin",
+    "thumbnail": "seeds/seed_4.png",
+    "frames": 4,
+    "shape": [
+      4,
+      3,
+      72,
+      128
+    ]
+  }
+]

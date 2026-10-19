@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, onUnmounted } from 'vue'
-import type { ConnectionState, InputMessage } from '@/types'
+import { ref, onMounted, onUnmounted } from 'vue'
+import type { ConnectionState, EngineBackend, InputMessage } from '@/types'
 
 const props = defineProps<{
-  stream: MediaStream | null
   connectionState: ConnectionState
   error: string | null
   gameLoading: boolean
+  loadingStage?: string
+  loadingPercent?: number
+  engineBackend?: EngineBackend
 }>()
 
 const emit = defineEmits<{
@@ -15,48 +17,41 @@ const emit = defineEmits<{
   'first-frame': []
 }>()
 
-const videoRef = ref<HTMLVideoElement | null>(null)
-
-// Bind stream to video element; reset first-frame flag on new stream
-watch(() => props.stream, (stream) => {
-  firstFrameEmitted = false
-  rvfcActive = false
-  if (videoRef.value && stream) {
-    videoRef.value.srcObject = stream
-  }
-})
-
-let rvfcActive = false
-
-function onVideoFrame() {
-  emit('frame')
-  if (videoRef.value && !videoRef.value.paused) {
-    videoRef.value.requestVideoFrameCallback(onVideoFrame)
-  } else {
-    rvfcActive = false
-  }
-}
-
-function tryStartFrameCounter() {
-  if (rvfcActive) return
-  const v = videoRef.value
-  if (!v || v.paused) return
-  try {
-    v.requestVideoFrameCallback(onVideoFrame)
-    rvfcActive = true
-  } catch {
-  }
-}
-
+const canvasRef = ref<HTMLCanvasElement | null>(null)
+let ctx: CanvasRenderingContext2D | null = null
+let currentImageData: ImageData | null = null
 let firstFrameEmitted = false
 
-function onVideoPlay() {
-  tryStartFrameCounter()
+function renderFrame(buffer: ArrayBuffer, width: number, height: number) {
+  const canvas = canvasRef.value
+  if (!canvas) return
+
+  if (!ctx) {
+    ctx = canvas.getContext('2d', { alpha: false, desynchronized: true })
+    if (!ctx) return
+  }
+
+  if (canvas.width !== width || canvas.height !== height) {
+    canvas.width = width
+    canvas.height = height
+    currentImageData = ctx.createImageData(width, height)
+  }
+
+  if (currentImageData) {
+    currentImageData.data.set(new Uint8ClampedArray(buffer))
+    ctx.putImageData(currentImageData, 0, 0)
+  }
+
   if (!firstFrameEmitted) {
     firstFrameEmitted = true
     emit('first-frame')
   }
+  emit('frame')
 }
+
+defineExpose({
+  renderFrame,
+})
 
 const activeKeys = ref<Record<string, boolean>>({})
 
@@ -92,15 +87,14 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeyDown)
   window.removeEventListener('keyup', onKeyUp)
-  rvfcActive = false
 })
 
 function onDoubleClick() {
-  if (videoRef.value) {
+  if (canvasRef.value) {
     if (document.fullscreenElement) {
       document.exitFullscreen()
     } else {
-      videoRef.value.requestFullscreen()
+      canvasRef.value.requestFullscreen()
     }
   }
 }
@@ -108,14 +102,10 @@ function onDoubleClick() {
 
 <template>
   <main class="flex-1 flex items-center justify-center bg-hollow-bg relative overflow-hidden">
-    <video
-      ref="videoRef"
-      autoplay
-      playsinline
-      muted
+    <canvas
+      ref="canvasRef"
       class="w-full h-full object-contain rounded shadow-2xl"
       style="image-rendering: pixelated;"
-      @play="onVideoPlay"
       @dblclick="onDoubleClick"
     />
 
@@ -143,61 +133,66 @@ function onDoubleClick() {
         </div>
       </div>
       
-      <div class="flex items-center">
+      <div class="flex items-center gap-2">
         <div :class="['w-12 h-12 flex flex-col items-center justify-center font-label-caps rounded-xl border border-white/20 transition-all duration-75', activeKeys['k'] ? 'bg-white/20 scale-95 text-white' : 'bg-black/40 text-white/70']">
           <span class="text-[16px] font-bold">K</span>
           <span class="text-[9px] opacity-70 mt-0.5">Attack</span>
         </div>
+        <div :class="['w-12 h-12 flex flex-col items-center justify-center font-label-caps rounded-xl border border-white/20 transition-all duration-75', activeKeys['j'] ? 'bg-white/20 scale-95 text-white' : 'bg-black/40 text-white/70']">
+          <span class="text-[16px] font-bold">J</span>
+          <span class="text-[9px] opacity-70 mt-0.5">Heal</span>
+        </div>
       </div>
     </div>
 
+    <!-- Idle state overlay -->
     <div
       v-if="connectionState === 'idle'"
       class="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-hollow-bg/80"
     >
-      <p class="text-2xl font-bold text-hollow-accent">Diffusion Hollow Knight</p>
-      <p class="text-hollow-muted">Press <span class="font-mono text-hollow-text">Connect</span> to start</p>
+      <p class="text-3xl font-bold text-hollow-accent tracking-wider glow-text">Diffusion Hollow Knight</p>
+      <p class="text-hollow-muted text-sm">Client-Side World Model (WebGPU + onnxruntime-web)</p>
+      <p class="text-hollow-muted text-xs mt-2">Press <span class="font-mono text-hollow-text font-bold bg-white/10 px-2 py-1 rounded">START GAME</span> to begin</p>
     </div>
 
+    <!-- Connecting / Loading overlay -->
     <div
-      v-if="connectionState === 'connecting'"
-      class="absolute inset-0 flex items-center justify-center bg-hollow-bg/80"
-    >
-      <div class="flex items-center gap-3">
-        <svg class="animate-spin h-6 w-6 text-hollow-accent" viewBox="0 0 24 24">
-          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
-          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/>
-        </svg>
-        <span class="text-hollow-text">Connecting…</span>
-      </div>
-    </div>
-
-    <div
-      v-if="connectionState === 'connected' && gameLoading"
-      class="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-hollow-bg/80"
+      v-if="gameLoading"
+      class="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-hollow-bg/85 backdrop-blur-sm"
     >
       <svg class="animate-spin h-8 w-8 text-hollow-accent" viewBox="0 0 24 24">
         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
         <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/>
       </svg>
-      <p class="text-hollow-accent font-bold">Loading game…</p>
-      <p class="text-hollow-muted text-xs">Warming up diffusion model, this may take a minute</p>
+      <p class="text-hollow-accent font-bold">{{ loadingStage || 'Warming up diffusion model…' }}</p>
+      
+      <div v-if="loadingPercent !== undefined && loadingPercent > 0" class="w-64 bg-white/10 rounded-full h-2 overflow-hidden mt-2">
+        <div
+          class="bg-hollow-accent h-full transition-all duration-150 ease-out rounded-full"
+          :style="{ width: `${loadingPercent}%` }"
+        ></div>
+      </div>
+      <p v-if="loadingPercent !== undefined && loadingPercent > 0" class="text-hollow-muted text-xs font-mono">
+        {{ loadingPercent }}%
+      </p>
     </div>
 
+    <!-- Error state overlay -->
     <div
       v-if="connectionState === 'error'"
       class="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-hollow-bg/80"
     >
-      <p class="text-red-400 font-bold">Connection Error</p>
-      <p class="text-hollow-muted text-sm">{{ error }}</p>
+      <p class="text-red-400 font-bold">Engine Error</p>
+      <p class="text-hollow-muted text-sm max-w-md text-center">{{ error }}</p>
     </div>
 
+    <!-- Disconnected state overlay -->
     <div
       v-if="connectionState === 'disconnected'"
       class="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-hollow-bg/80"
     >
-      <p class="text-yellow-400 font-bold">Disconnected</p>
-      <p class="text-hollow-muted text-sm">Press Connect to rejoin</p>
+      <p class="text-yellow-400 font-bold">Game Paused</p>
+      <p class="text-hollow-muted text-sm">Press START GAME to resume</p>
     </div>
   </main>
 </template>
