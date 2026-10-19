@@ -45,13 +45,25 @@ const prevLrBuffer = new Float32Array(LR_CHW_SIZE);
 let lrRgbaBuffer = new Uint8ClampedArray(LR_RGBA_SIZE);
 let hrRgbaBuffer = new Uint8ClampedArray(HR_RGBA_SIZE);
 
-// Sigmas schedule (3 steps)
-const sigmas = buildSigmas(3, 0.002, 5.0, 7);
+// Configurable sampling steps (default 2 for high performance, 3 for quality)
+let samplingSteps = 2;
+let sigmas = buildSigmas(samplingSteps, 0.002, 5.0, 7);
+let sigmaTensors: ort.Tensor[] = [];
+
+function rebuildSigmas(steps: number) {
+  samplingSteps = Math.max(1, Math.min(steps, 10));
+  sigmas = buildSigmas(samplingSteps, 0.002, 5.0, 7);
+  sigmaTensors = [];
+  for (let s = 0; s < samplingSteps; s++) {
+    sigmaTensors.push(new ort.Tensor('float32', Float32Array.from([sigmas[s]]), [1]));
+  }
+}
+rebuildSigmas(samplingSteps);
 
 // Input and loop state
 const pressedKeys = new Set<string>();
 let isRunning = false;
-let upscalerEnabled = true;
+let upscalerEnabled = false; // Default to false (72p pixel-art) for blazing performance, user can toggle 288p on GPU
 let isStepInProgress = false;
 
 // Seed states
@@ -59,9 +71,7 @@ let seedManifest: SeedManifestItem[] = [];
 let currentSeedId = 'seed_1';
 let currentSeedData: ArrayBuffer | null = null;
 
-// FPS calculation
-let frameCounter = 0;
-let lastFpsTime = performance.now();
+// FPS calculation with EMA smoothing for immediate responsiveness
 let currentFps = 0;
 
 function post(msg: WorkerOutMessage, transfer?: Transferable[]) {
@@ -221,16 +231,20 @@ async function step() {
     // 2. Generate Gaussian noise x ~ N(0, 1)
     boxMullerRandom(xBuffer, 0, 1.0);
 
-    // 3. EDM Euler sampling loop (3 steps)
-    for (let s = 0; s < 3; s++) {
+    // Pre-allocate context tensors once per frame to eliminate GC and buffer creation overhead
+    const prevObsTensor = new ort.Tensor('float32', obsBuffer, [1, CONTEXT_LEN * 3, H, W]);
+    const prevActTensor = new ort.Tensor('int64', actBuffer, [1, CONTEXT_LEN]);
+
+    // 3. EDM Euler sampling loop
+    for (let s = 0; s < samplingSteps; s++) {
       const sigmaCurr = sigmas[s];
       const sigmaNext = sigmas[s + 1];
 
       const feeds = {
         noisy_next_obs: new ort.Tensor('float32', xBuffer, [1, 3, H, W]),
-        sigma: new ort.Tensor('float32', Float32Array.from([sigmaCurr]), [1]),
-        prev_obs: new ort.Tensor('float32', obsBuffer, [1, CONTEXT_LEN * 3, H, W]),
-        prev_act: new ort.Tensor('int64', actBuffer, [1, CONTEXT_LEN]),
+        sigma: sigmaTensors[s],
+        prev_obs: prevObsTensor,
+        prev_act: prevActTensor,
       };
 
       const results = await denoiserSession.run(feeds);
@@ -260,10 +274,14 @@ async function step() {
     let outHeight = H;
     let transferBuffer: ArrayBuffer;
 
+    const tDenoise = performance.now() - tStart;
+    let tUpscale = 0;
+
     if (upscalerEnabled && upscalerSession) {
       outWidth = HR_W;
       outHeight = HR_H;
 
+      const tUpStart = performance.now();
       const upscalerFeeds = {
         lr_current: new ort.Tensor('float32', xBuffer, [1, 3, H, W]),
         prev_lr: new ort.Tensor('float32', prevLrBuffer, [1, 3, H, W]),
@@ -271,6 +289,7 @@ async function step() {
 
       const upResults = await upscalerSession.run(upscalerFeeds);
       const hrFrame = upResults.hr_frame.data as Float32Array;
+      tUpscale = performance.now() - tUpStart;
 
       // Update previous low-res for next upscaler step
       prevLrBuffer.set(xBuffer);
@@ -295,17 +314,17 @@ async function step() {
       lrRgbaBuffer = new Uint8ClampedArray(LR_RGBA_SIZE);
     }
 
-    // Calculate FPS
-    frameCounter++;
+    // Calculate FPS with EMA smoothing for immediate responsiveness
     const now = performance.now();
-    const elapsed = now - lastFpsTime;
-    if (elapsed >= 1000) {
-      currentFps = Math.round((frameCounter * 1000) / elapsed);
-      frameCounter = 0;
-      lastFpsTime = now;
+    const stepTimeMs = now - tStart;
+    const instantFps = stepTimeMs > 0 ? (1000 / stepTimeMs) : 0;
+    if (currentFps === 0) {
+      currentFps = instantFps;
+    } else {
+      currentFps = currentFps * 0.75 + instantFps * 0.25;
     }
 
-    const stepTimeMs = now - tStart;
+    console.log(`[Worker Frame] Total: ${stepTimeMs.toFixed(1)}ms (Denoiser ${samplingSteps}x: ${tDenoise.toFixed(1)}ms, Upscaler: ${tUpscale.toFixed(1)}ms) | FPS: ${currentFps.toFixed(1)}`);
 
     // Send frame to main thread
     post(
@@ -363,6 +382,10 @@ self.onmessage = async (e: MessageEvent<WorkerInMessage>) => {
 
     case 'set-upscaler':
       upscalerEnabled = msg.enabled;
+      break;
+
+    case 'set-steps':
+      rebuildSigmas(msg.steps);
       break;
 
     case 'set-seed':

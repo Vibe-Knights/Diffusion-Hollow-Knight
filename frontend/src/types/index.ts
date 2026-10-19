@@ -27,6 +27,7 @@ export interface SettingsMessage {
   upscale_model?: string
   interpolation_model?: string
   seed_id?: string
+  steps?: number
 }
 
 export type ConnectionState = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'error'
@@ -56,6 +57,7 @@ export type WorkerInMessage =
   | { type: 'stop' }
   | { type: 'key'; key: string; state: 'down' | 'up' }
   | { type: 'set-upscaler'; enabled: boolean }
+  | { type: 'set-steps'; steps: number }
   | { type: 'set-seed'; seedId: string }
   | { type: 'purge-buffer' }
 
@@ -65,3 +67,4 @@ export type WorkerOutMessage =
   | { type: 'frame'; buffer: ArrayBuffer; width: number; height: number; fps: number; stepTimeMs: number }
   | { type: 'seed-changed'; seedId: string }
   | { type: 'error'; message: string }
+

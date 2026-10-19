@@ -89,6 +89,31 @@ async function runTest() {
   await page.screenshot({ path: 'client_game_after_input.png' });
   console.log('[Test] Saved screenshot after input to client_game_after_input.png');
 
+  // Test toggling Upscaler to ON (288p)
+  console.log('[Test] Toggling Upscaler to ON (288p)...');
+  const upscalerOnBtn = page.locator('button:has-text("ON (288p)")');
+  await upscalerOnBtn.click();
+  await page.waitForTimeout(2000);
+
+  const hrCanvasData = await page.evaluate(() => {
+    const canvas = document.querySelector('canvas');
+    return canvas ? { width: canvas.width, height: canvas.height } : null;
+  });
+  console.log(`[Test] Canvas after Upscaler ON: ${hrCanvasData?.width}x${hrCanvasData?.height}`);
+  if (hrCanvasData?.width !== 512 || hrCanvasData?.height !== 288) {
+    throw new Error(`Expected 512x288 after upscaler toggle, got ${hrCanvasData?.width}x${hrCanvasData?.height}`);
+  }
+
+  // Test toggling Sampling Steps to 3 Steps (Quality)
+  console.log('[Test] Toggling Sampling Steps to 3 Steps (Quality)...');
+  const steps3Btn = page.locator('button:has-text("3 Steps (Quality)")');
+  await steps3Btn.click();
+  await page.waitForTimeout(2000);
+
+  // Take final screenshot with upscaler ON and 3 steps
+  await page.screenshot({ path: 'client_game_upscaled.png' });
+  console.log('[Test] Saved screenshot to client_game_upscaled.png');
+
   await browser.close();
   console.log('[Test] Browser test passed successfully!');
 }

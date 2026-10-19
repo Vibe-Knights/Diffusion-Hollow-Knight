@@ -17,6 +17,9 @@ defineProps<{
   engineBackend?: string
   availableSeeds?: Array<{ id: string; name: string }>
   activeSeed?: string
+  fps?: number
+  stepTimeMs?: number
+  samplingSteps?: number
 }>()
 
 const emit = defineEmits<{
@@ -28,6 +31,7 @@ const emit = defineEmits<{
   'change-upscale-model': [val: string]
   'change-interpolation-model': [val: string]
   'change-seed': [val: string]
+  'change-steps': [val: number]
   'purge-buffer': []
   'connect': []
   'disconnect': []
@@ -44,6 +48,11 @@ const emit = defineEmits<{
         <div class="flex items-center gap-2">
           <div class="soul-orb" :class="{ 'opacity-40': !connected }"></div>
           <span class="font-label-caps text-label-caps text-on-surface">Engine: {{ connected ? (engineBackend?.toUpperCase() || 'WEBGPU') : 'OFFLINE' }}</span>
+        </div>
+        <div v-if="connected" class="flex items-center gap-2 px-3 py-1 rounded-full bg-surface-container-high border border-outline-variant/30 text-xs font-mono shadow-sm">
+          <span class="inline-block w-2 h-2 rounded-full" :class="(fps ?? 0) >= 15 ? 'bg-emerald-400' : (fps ?? 0) >= 8 ? 'bg-amber-400' : 'bg-cyan-400 animate-pulse'"></span>
+          <span class="font-bold text-on-surface">{{ (fps ?? 0) > 0 ? (fps ?? 0).toFixed(1) : '--' }} FPS</span>
+          <span class="text-on-surface-variant text-[11px]">({{ (stepTimeMs ?? 0) > 0 ? stepTimeMs : '--' }} ms)</span>
         </div>
       </div>
       <div class="flex items-center gap-6">
@@ -125,13 +134,50 @@ const emit = defineEmits<{
               </div>
             </div>
             
+            <!-- Sampling Steps (Performance vs Quality) -->
             <div class="flex flex-col gap-2">
-              <span class="font-body-md text-body-md text-on-surface">Architecture</span>
-              <div class="bg-surface-container-high rounded p-2 border border-outline-variant/20 text-[11px] text-on-surface-variant font-mono space-y-1">
-                <div>Model: DIAMOND (15.1M)</div>
-                <div>Sampler: Euler (EDM Karras)</div>
-                <div>Steps: 3 steps/frame</div>
-                <div>Client: onnxruntime-web</div>
+              <div class="flex items-center justify-between">
+                <span class="font-body-md text-body-md text-on-surface">Sampling Steps</span>
+                <span class="text-[10px] text-on-surface-variant font-mono">{{ (samplingSteps ?? 2) === 2 ? 'High Speed' : 'High Quality' }}</span>
+              </div>
+              <div class="flex bg-surface-container-high rounded p-1 border border-outline-variant/20">
+                <button
+                  @click="emit('change-steps', 2)"
+                  class="flex-1 font-label-caps text-[10px] py-1 text-center rounded transition-colors"
+                  :class="(samplingSteps ?? 2) === 2 ? 'bg-on-surface/10 text-on-surface border border-on-surface/20' : 'text-on-surface-variant hover:text-on-surface'"
+                >2 Steps (Fast)</button>
+                <button
+                  @click="emit('change-steps', 3)"
+                  class="flex-1 font-label-caps text-[10px] py-1 text-center rounded transition-colors"
+                  :class="(samplingSteps ?? 2) === 3 ? 'bg-on-surface/10 text-on-surface border border-on-surface/20' : 'text-on-surface-variant hover:text-on-surface'"
+                >3 Steps (Quality)</button>
+              </div>
+            </div>
+
+            <!-- Performance & Architecture Metrics -->
+            <div class="flex flex-col gap-2">
+              <span class="font-body-md text-body-md text-on-surface">Performance & Architecture</span>
+              <div class="bg-surface-container-high rounded p-2.5 border border-outline-variant/20 text-[11px] text-on-surface-variant font-mono space-y-1.5">
+                <div class="flex justify-between items-center">
+                  <span>Frame Rate:</span>
+                  <span class="text-on-surface font-bold">{{ (fps ?? 0) > 0 ? (fps ?? 0).toFixed(1) : '--' }} FPS</span>
+                </div>
+                <div class="flex justify-between items-center">
+                  <span>Frame Time:</span>
+                  <span class="text-on-surface font-bold">{{ (stepTimeMs ?? 0) > 0 ? stepTimeMs : '--' }} ms</span>
+                </div>
+                <div class="flex justify-between items-center">
+                  <span>Execution:</span>
+                  <span class="text-primary font-bold">{{ engineBackend?.toUpperCase() || 'WEBGPU' }}</span>
+                </div>
+                <div class="flex justify-between items-center">
+                  <span>World Model:</span>
+                  <span>DIAMOND U-Net (15.1M)</span>
+                </div>
+                <div class="flex justify-between items-center">
+                  <span>Upscaler:</span>
+                  <span>{{ upscalerOn ? 'FastUpscaler (288p)' : 'Native (72p Pixelated)' }}</span>
+                </div>
               </div>
             </div>
           </div>

@@ -9,6 +9,8 @@ const props = defineProps<{
   loadingStage?: string
   loadingPercent?: number
   engineBackend?: EngineBackend
+  fps?: number
+  stepTimeMs?: number
 }>()
 
 const emit = defineEmits<{
@@ -108,6 +110,27 @@ function onDoubleClick() {
       style="image-rendering: pixelated;"
       @dblclick="onDoubleClick"
     />
+
+    <!-- Real-time HUD (FPS, Latency & Engine) overlay -->
+    <div
+      v-if="connectionState === 'connected'"
+      class="absolute top-4 right-4 bg-black/70 backdrop-blur-md border border-white/10 rounded-lg px-3 py-1.5 flex items-center gap-3 text-xs font-mono pointer-events-none z-20 shadow-2xl"
+    >
+      <div class="flex items-center gap-1.5">
+        <span class="w-2 h-2 rounded-full" :class="(fps ?? 0) >= 15 ? 'bg-emerald-400' : (fps ?? 0) >= 8 ? 'bg-amber-400' : 'bg-cyan-400 animate-pulse'"></span>
+        <span class="text-white font-bold">{{ (fps ?? 0) > 0 ? (fps ?? 0).toFixed(1) : '--' }}</span>
+        <span class="text-white/60 text-[10px]">FPS</span>
+      </div>
+      <div class="h-3 w-[1px] bg-white/20"></div>
+      <div class="flex items-center gap-1 text-white/80">
+        <span>{{ (stepTimeMs ?? 0) > 0 ? stepTimeMs : '--' }}</span>
+        <span class="text-white/60 text-[10px]">ms</span>
+      </div>
+      <div class="h-3 w-[1px] bg-white/20"></div>
+      <span class="text-[10px] uppercase tracking-wider text-hollow-accent font-semibold">
+        {{ engineBackend || 'WEBGPU' }}
+      </span>
+    </div>
 
     <div class="absolute bottom-6 left-6 p-4 rounded-lg flex gap-8 z-20 items-end">
       <div class="flex flex-col items-center gap-2">

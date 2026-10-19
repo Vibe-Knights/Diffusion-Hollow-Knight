@@ -16,6 +16,7 @@ const {
   loadingPercent,
   upscalerOn,
   upscalerAvailable,
+  samplingSteps,
   availableSeeds,
   activeSeed,
   connect,
@@ -38,6 +39,10 @@ const interpolationModel = ref('v1.0')
 
 function onToggleUpscaler(val: boolean) {
   sendSettings({ type: 'settings', upscaler: val })
+}
+
+function onChangeSteps(val: number) {
+  sendSettings({ type: 'settings', steps: val })
 }
 
 function onToggleInterpolation(val: boolean) {
@@ -86,7 +91,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="flex flex-col h-full min-h-screen font-body-lg dark bg-[#0e0e0e] text-on-surface">
+  <div class="flex flex-col h-screen overflow-hidden font-body-lg dark bg-[#0e0e0e] text-on-surface">
     <ControlPanel
       :connected="connectionState === 'connected'"
       :upscaler-on="upscalerOn"
@@ -105,7 +110,11 @@ onMounted(() => {
       :engine-backend="engineBackend"
       :available-seeds="availableSeeds"
       :active-seed="activeSeed"
+      :fps="fps"
+      :step-time-ms="stepTimeMs"
+      :sampling-steps="samplingSteps"
       @toggle-upscaler="onToggleUpscaler"
+      @change-steps="onChangeSteps"
       @toggle-interpolation="onToggleInterpolation"
       @change-exp="onChangeExp"
       @toggle-optical-flow="onToggleOpticalFlow"
@@ -118,7 +127,7 @@ onMounted(() => {
       @disconnect="disconnect"
     />
 
-    <div class="flex flex-1 pt-16 h-screen w-full">
+    <div class="flex flex-1 pt-16 overflow-hidden w-full">
       <main class="flex-1 ml-0 md:ml-64 relative overflow-hidden p-4 h-full">
         <GameScreen
           ref="gameScreenRef"
@@ -128,15 +137,18 @@ onMounted(() => {
           :loading-stage="loadingStage"
           :loading-percent="loadingPercent"
           :engine-backend="engineBackend"
+          :fps="fps"
+          :step-time-ms="stepTimeMs"
           @keyaction="sendInput"
         />
       </main>
     </div>
 
     <StatusBar
-      class="hidden"
       :connection-state="connectionState"
       :fps="fps"
+      :step-time-ms="stepTimeMs"
+      :engine-backend="engineBackend"
       :active-sessions="connectionState === 'connected' ? 1 : 0"
       :max-sessions="1"
     />

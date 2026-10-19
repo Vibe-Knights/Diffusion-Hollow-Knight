@@ -22,8 +22,9 @@ export function useGameEngine() {
   const loadingStage: Ref<string> = ref('');
   const loadingPercent: Ref<number> = ref(0);
 
-  const upscalerOn: Ref<boolean> = ref(true);
+  const upscalerOn: Ref<boolean> = ref(false);
   const upscalerAvailable: Ref<boolean> = ref(true);
+  const samplingSteps: Ref<number> = ref(2);
 
   const availableSeeds: Ref<SeedManifestItem[]> = ref([]);
   const activeSeed: Ref<string> = ref('seed_1');
@@ -141,6 +142,11 @@ export function useGameEngine() {
       worker.postMessage({ type: 'set-upscaler', enabled: settings.upscaler });
     }
 
+    if (settings.steps !== undefined) {
+      samplingSteps.value = settings.steps;
+      worker.postMessage({ type: 'set-steps', steps: settings.steps });
+    }
+
     if (settings.seed_id !== undefined) {
       activeSeed.value = settings.seed_id;
       worker.postMessage({ type: 'set-seed', seedId: settings.seed_id });
@@ -170,6 +176,7 @@ export function useGameEngine() {
     loadingPercent,
     upscalerOn,
     upscalerAvailable,
+    samplingSteps,
     availableSeeds,
     activeSeed,
     connect,
